@@ -24,12 +24,24 @@
     <ClCompile Include="WorkerThread.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="DatabaseThread.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="MySqlConnector.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Server.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="WorkerThread.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="DatabaseThread.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="MySqlConnector.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
   </ItemGroup>

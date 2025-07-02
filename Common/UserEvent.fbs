@@ -1,0 +1,163 @@
+enum ResultCode : byte {
+    SUCCESS = 0,
+    FAIL = 1,
+    INVALID_USER = 2,
+    USER_NOT_FOUND = 3
+}
+
+// === LOGIN 관련 ===
+table S2C_Login {
+    result:ResultCode;
+    user_id:uint32;
+    username:string;
+    level:uint32;
+}
+
+table C2S_Login {
+    username:string;
+    password:string;
+}
+
+// === LOGOUT 관련 ===
+table S2C_Logout {
+    result:ResultCode;
+    message:string;
+}
+
+table C2S_Logout {
+    user_id:uint32;
+}
+
+// === 계정 생성 관련 ===
+table S2C_CreateAccount {
+    result:ResultCode;
+    user_id:uint32;
+    message:string;
+}
+
+table C2S_CreateAccount {
+    username:string;
+    password:string;
+    nickname:string;
+}
+
+// === 아이템 관련 ===
+table ItemData {
+    item_id:uint32;
+    item_name:string;
+    item_count:uint32;
+    item_type:uint32;  // 0:무기, 1:방어구, 2:소비품
+}
+
+table S2C_ItemData {
+    result:ResultCode;
+    user_id:uint32;
+    items:[ItemData];
+    gold:uint32;
+}
+
+table C2S_ItemData {
+    user_id:uint32;
+    request_type:uint32;  // 0:조회, 1:추가, 2:삭제
+    item_id:uint32;
+    item_count:uint32;
+}
+
+// === 플레이어 관련 ===
+table S2C_PlayerData {
+    result:ResultCode;
+    user_id:uint32;
+    username:string;
+    level:uint32;
+    exp:uint32;
+    hp:uint32;
+    mp:uint32;
+    attack:uint32;
+    defense:uint32;
+    gold:uint32;
+    map_id:uint32;
+    pos_x:float;
+    pos_y:float;
+}
+
+table C2S_PlayerData {
+    user_id:uint32;
+    request_type:uint32;  // 0:조회, 1:업데이트
+    level:uint32;
+    exp:uint32;
+    hp:uint32;
+    mp:uint32;
+    pos_x:float;
+    pos_y:float;
+}
+
+// === 몬스터 관련 ===
+table MonsterData {
+    monster_id:uint32;
+    monster_name:string;
+    level:uint32;
+    hp:uint32;
+    attack:uint32;
+    defense:uint32;
+    exp_reward:uint32;
+    gold_reward:uint32;
+}
+
+table S2C_MonsterData {
+    result:ResultCode;
+    monsters:[MonsterData];
+}
+
+table C2S_MonsterData {
+    request_type:uint32;  // 0:목록조회, 1:몬스터추가, 2:몬스터삭제
+    monster_id:uint32;
+    monster_data:MonsterData;
+}
+
+// === 채팅 관련 ===
+table ChatData {
+    chat_id:uint32;
+    sender_id:uint32;
+    sender_name:string;
+    message:string;
+    chat_type:uint32;  // 0:전체, 1:귓속말, 2:길드
+    timestamp:uint64;
+}
+
+table S2C_PlayerChat {
+    result:ResultCode;
+    chats:[ChatData];
+}
+
+table C2S_PlayerChat {
+    request_type:uint32;  // 0:채팅목록조회, 1:채팅전송
+    sender_id:uint32;
+    receiver_id:uint32;
+    message:string;
+    chat_type:uint32;
+}
+
+// === 메인 패킷 구조 ===
+union EventType {
+    S2C_Login,
+    C2S_Login,
+    S2C_Logout,
+    C2S_Logout,
+    S2C_CreateAccount,
+    C2S_CreateAccount,
+    S2C_ItemData,
+    C2S_ItemData,
+    S2C_PlayerData,
+    C2S_PlayerData,
+    S2C_MonsterData,
+    C2S_MonsterData,
+    S2C_PlayerChat,
+    C2S_PlayerChat
+}
+
+table DatabasePacket {
+    packet_event:EventType;
+    client_socket:uint32;
+}
+
+root_type DatabasePacket;

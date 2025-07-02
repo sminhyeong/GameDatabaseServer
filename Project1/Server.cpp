@@ -2,172 +2,237 @@
 
 #include "Server.h"
 #include "WorkerThread.h"
-#include<thread>
+#include <thread>
+#include <iostream>
+#include <chrono>
+#include "DatabaseThread.h"
 
+std::unique_ptr<Server> Server::instance = nullptr;
+std::mutex Server::instance_mutex;
 
 Server::Server()
+    : _wsa_data(WSAData()), _server_sock(INVALID_SOCKET), _is_running(false)
 {
-	_wsa_data = WSAData();
-	instance = nullptr;
-	_server_sock = INVALID_SOCKET;
-	_is_running = false;
 }
-
-Server* Server::instance = nullptr;
 
 Server* Server::Instance()
 {
-	if (instance == nullptr)
-	{
-		instance = new Server();
-	}
-	return instance;
+    std::lock_guard<std::mutex> lock(instance_mutex);
+    if (instance == nullptr) {
+        instance = std::unique_ptr<Server>(new Server());
+    }
+    return instance.get();
 }
 
 Server::~Server()
 {
-	_is_running = false;
+    Stop();
 
-	if (_thread_cleaner.joinable())
-		_thread_cleaner.join();
+    if (_thread_cleaner && _thread_cleaner->joinable()) {
+        _thread_cleaner->join();
+    }
 
-	std::lock_guard<std::mutex> lock(_worker_threads_mutex);
-	for (WorkerThread* worker : _worker_threads) {
-		delete worker;
-	}
-	_worker_threads.clear();
+    std::lock_guard<std::mutex> lock(_worker_threads_mutex);
+    _worker_threads.clear();  // unique_ptr이므로 자동으로 delete됨
 
-	// 서버 소켓 닫기
-	if (_server_sock != INVALID_SOCKET) {
-		closesocket(_server_sock);
-	}
-	WSACleanup(); // WSAStartup에 대한 WSACleanup 호출
+    // 서버 소켓 닫기
+    if (_server_sock != INVALID_SOCKET) {
+        closesocket(_server_sock);
+    }
+    WSACleanup();
 }
 
-void Server::Initialized(const char* ip, int port)
+void Server::SetNonBlocking(SOCKET sock)
 {
-	int Result = WSAStartup(MAKEWORD(2, 2), &_wsa_data);
-	if (Result != 0)
-	{
-		_is_running = false;
-		printf("Failed WSASTartUp\n");
-		exit(-1);
-	}
-	_server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (_server_sock == INVALID_SOCKET)
-	{
-		_is_running = false;
-		printf("Failed ServerSocket Create\n");
-		exit(-1);
-	}
+    u_long mode = 1;  // 1 for non-blocking, 0 for blocking
+    ioctlsocket(sock, FIONBIO, &mode);
+}
 
-	sockaddr_in serverSockAddr;
-	memset(&serverSockAddr, 0, sizeof(serverSockAddr));
-	serverSockAddr.sin_addr.s_addr = inet_addr(ip);
-	serverSockAddr.sin_family = PF_INET;
-	serverSockAddr.sin_port = htons(port);
+void Server::Initialize(const char* ip, int port)
+{
+    int result = WSAStartup(MAKEWORD(2, 2), &_wsa_data);
+    if (result != 0) {
+        printf("Failed WSAStartup: %d\n", result);
+        throw std::runtime_error("WSAStartup failed");
+    }
 
-	Result = bind(_server_sock, (sockaddr*)&serverSockAddr, sizeof(serverSockAddr));
-	if (Result == SOCKET_ERROR)
-	{
-		_is_running = false;
-		printf("Failed ServerSocket Bind\n");
-		exit(-1);
-	}
+    _server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (_server_sock == INVALID_SOCKET) {
+        printf("Failed to create server socket: %d\n", WSAGetLastError());
+        WSACleanup();
+        throw std::runtime_error("Socket creation failed");
+    }
 
-	Result = listen(_server_sock, 10);
-	if (Result == SOCKET_ERROR)
-	{
-		_is_running = false;
-		printf("Failed ServerSocket Listen\n");
-		exit(-1);
-	}
-	_is_running = true;
+    // SO_REUSEADDR 설정
+    int opt = 1;
+    setsockopt(_server_sock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+
+    sockaddr_in serverSockAddr;
+    memset(&serverSockAddr, 0, sizeof(serverSockAddr));
+    serverSockAddr.sin_addr.s_addr = inet_addr(ip);
+    serverSockAddr.sin_family = AF_INET;
+    serverSockAddr.sin_port = htons(port);
+
+    result = bind(_server_sock, (sockaddr*)&serverSockAddr, sizeof(serverSockAddr));
+    if (result == SOCKET_ERROR) {
+        printf("Failed to bind server socket: %d\n", WSAGetLastError());
+        closesocket(_server_sock);
+        WSACleanup();
+        throw std::runtime_error("Socket bind failed");
+    }
+
+    result = listen(_server_sock, SOMAXCONN);
+    if (result == SOCKET_ERROR) {
+        printf("Failed to listen on server socket: %d\n", WSAGetLastError());
+        closesocket(_server_sock);
+        WSACleanup();
+        throw std::runtime_error("Socket listen failed");
+    }
+    _database_thread = std::make_unique<DatabaseThread>(&RecvPakets, &SendPackets);
+    if (!_database_thread->ConnectDB())
+    {
+        printf("Failed to Connect Database Server: %d\n", WSAGetLastError());
+        closesocket(_server_sock);
+        WSACleanup();
+        throw std::runtime_error("Socket listen failed");
+    }
+    
+    // Non-blocking 모드로 설정
+    SetNonBlocking(_server_sock);
+
+    _is_running.store(true);
+    printf("Server initialized successfully on %s:%d\n", ip, port);
 }
 
 void Server::Run()
 {
-	if (!_is_running) return;
+    if (!_is_running.load()) {
+        printf("Server is not initialized\n");
+        return;
+    }
 
-	_thread_cleaner = std::thread(&Server::Thread_ClearDeadWorkerLoop, this);
+    _thread_cleaner = std::make_unique<std::thread>(&Server::Thread_ClearDeadWorkerLoop, this);
 
-	while (true)
-	{
-		sockaddr_in clientSockAddr;
-		int clientSockAddrSize = sizeof(clientSockAddr);
-		memset(&clientSockAddr, 0, sizeof(clientSockAddr));
-		SOCKET clientSock = accept(_server_sock, (sockaddr*)&clientSockAddr, &clientSockAddrSize);
-		
-		std::lock_guard<std::mutex> lock(_worker_threads_mutex); // <<<< 여기에 뮤텍스
-		
-		if (clientSock == INVALID_SOCKET)
-		{
-			printf("Failed ClientSocket Accept\n");
-			continue;
-		}
+    printf("Server is running...\n");
 
-		int canUseThredIdx = FindCanUseWorkerThread();
-		if (canUseThredIdx == -1)
-		{
+    while (_is_running.load()) {
+        sockaddr_in clientSockAddr;
+        int clientSockAddrSize = sizeof(clientSockAddr);
+        memset(&clientSockAddr, 0, sizeof(clientSockAddr));
 
-			_worker_threads.push_back(new WorkerThread(clientSock));
-			printf("Connect Client %d\n", (int)_worker_threads.size());
-			continue;
-		}
+        SOCKET clientSock = accept(_server_sock, (sockaddr*)&clientSockAddr, &clientSockAddrSize);
 
-		_worker_threads[canUseThredIdx]->AddClient(clientSock);
-		printf("Connect Client %d\n", (int)_worker_threads.size());
-	}
+        if (clientSock == INVALID_SOCKET) {
+            int error = WSAGetLastError();
+            if (error == WSAEWOULDBLOCK) {
+                // Non-blocking 모드에서 연결 대기 중
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            else if (!_is_running.load()) {
+                // 서버 종료 중
+                break;
+            }
+            else {
+                printf("Accept error: %d\n", error);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+        }
+
+        // 클라이언트 소켓도 non-blocking으로 설정
+        SetNonBlocking(clientSock);
+
+        std::lock_guard<std::mutex> lock(_worker_threads_mutex);
+        int canUseThreadIdx = FindCanUseWorkerThread();
+
+        if (canUseThreadIdx == -1) {
+            // 새 WorkerThread 생성
+            try {
+                _worker_threads.push_back(std::make_unique<WorkerThread>(clientSock));
+                printf("New WorkerThread created. Total threads: %zu\n", _worker_threads.size());
+            }
+            catch (const std::exception& e) {
+                printf("Failed to create WorkerThread: %s\n", e.what());
+                closesocket(clientSock);
+            }
+        }
+        else {
+            // 기존 WorkerThread에 클라이언트 추가
+            _worker_threads[canUseThreadIdx]->AddClient(clientSock);
+            printf("Client added to existing thread %d\n", canUseThreadIdx);
+        }
+    }
+
+    printf("Server main loop finished\n");
+}
+
+void Server::Stop()
+{
+    printf("Stopping server...\n");
+    _is_running.store(false);
+
+    // 서버 소켓 닫기 (accept 블로킹 해제)
+    if (_server_sock != INVALID_SOCKET) {
+        closesocket(_server_sock);
+        _server_sock = INVALID_SOCKET;
+    }
+
+    // 모든 WorkerThread 종료
+    std::lock_guard<std::mutex> lock(_worker_threads_mutex);
+    for (auto& worker : _worker_threads) {
+        if (worker) {
+            worker->StopThread();
+        }
+    }
 }
 
 void Server::Destroy()
 {
-	if (!_is_running) return;
-	if (instance != nullptr)
-	{
-		Server* temp = instance;
-		instance = nullptr;
-		delete temp;
-	}
+    if (instance) {
+        instance->Stop();
+        std::lock_guard<std::mutex> lock(instance_mutex);
+        instance.reset();
+    }
 }
 
 int Server::FindCanUseWorkerThread()
 {
-	if (_worker_threads.size() <= 0)
-		return -1;
-	int idx = 0;
+    // _worker_threads_mutex가 이미 잠겨있다고 가정
+    if (_worker_threads.empty()) {
+        return -1;
+    }
 
-	for (auto iter = _worker_threads.begin(); iter != _worker_threads.end(); iter++)
-	{
-		if (!(*iter)->IsFullAccess() && (*iter)->DoThread())
-			return idx;
-		idx++;
-	}
-	return -1;
+    for (size_t i = 0; i < _worker_threads.size(); ++i) {
+        if (_worker_threads[i] &&
+            !_worker_threads[i]->IsFullAccess() &&
+            _worker_threads[i]->DoThread()) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
 
-void Server::ClearDeathThread()
+void Server::ClearDeadThreads()
 {
-	std::lock_guard<std::mutex> lock(_worker_threads_mutex);
-	
-	for (auto iter = _worker_threads.begin(); iter != _worker_threads.end();)
-	{
-		if (!(*iter)->DoThread())
-		{
-			iter = _worker_threads.erase(iter);
-			printf("Destroy WorkerThread\n");
-			continue;
-		}
-		iter++;
-	}
+    std::lock_guard<std::mutex> lock(_worker_threads_mutex);
+
+    for (auto iter = _worker_threads.begin(); iter != _worker_threads.end();) {
+        if (*iter && !(*iter)->DoThread()) {
+            printf("Removing dead WorkerThread. Remaining: %zu\n", _worker_threads.size() - 1);
+            iter = _worker_threads.erase(iter);
+        }
+        else {
+            ++iter;
+        }
+    }
 }
 
 void Server::Thread_ClearDeadWorkerLoop()
 {
-	while (_is_running) // 또는 true
-	{
-		std::this_thread::sleep_for(std::chrono::seconds(2)); // 5초마다
-
-		ClearDeathThread(); // 죽은 워커 스레드 정리
-	}
+    while (_is_running.load()) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        ClearDeadThreads();
+    }
+    printf("Thread cleaner finished\n");
 }
