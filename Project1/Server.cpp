@@ -28,6 +28,16 @@ Server::~Server()
 {
     Stop();
 
+    // 응답 처리 스레드 종료 대기
+    if (_response_handler_thread && _response_handler_thread->joinable()) {
+        _response_handler_thread->join();
+    }
+
+    // 데이터베이스 스레드 종료 대기
+    if (_database_thread) {
+        _database_thread->Stop();
+    }
+
     if (_thread_cleaner && _thread_cleaner->joinable()) {
         _thread_cleaner->join();
     }
@@ -88,18 +98,23 @@ void Server::Initialize(const char* ip, int port)
         WSACleanup();
         throw std::runtime_error("Socket listen failed");
     }
+
     _database_thread = std::make_unique<DatabaseThread>(&RecvPakets, &SendPackets);
     if (!_database_thread->ConnectDB())
     {
-        printf("Failed to Connect Database Server: %d\n", WSAGetLastError());
+        printf("Failed to Connect Database Server\n");
         closesocket(_server_sock);
         WSACleanup();
-        throw std::runtime_error("Socket listen failed");
+        throw std::runtime_error("Database connection failed");
     }
+
+    // 응답 처리 스레드 시작
+    _response_handler_thread = std::make_unique<std::thread>(&Server::ResponseHandlerLoop, this);
+
     
     // Non-blocking 모드로 설정
     SetNonBlocking(_server_sock);
-
+  
     _is_running.store(true);
     printf("Server initialized successfully on %s:%d\n", ip, port);
 }
@@ -149,7 +164,7 @@ void Server::Run()
         if (canUseThreadIdx == -1) {
             // 새 WorkerThread 생성
             try {
-                _worker_threads.push_back(std::make_unique<WorkerThread>(clientSock));
+                _worker_threads.push_back(std::make_unique<WorkerThread>(clientSock,&RecvPakets));
                 printf("New WorkerThread created. Total threads: %zu\n", _worker_threads.size());
             }
             catch (const std::exception& e) {
@@ -235,4 +250,51 @@ void Server::Thread_ClearDeadWorkerLoop()
         ClearDeadThreads();
     }
     printf("Thread cleaner finished\n");
+}
+
+void Server::ResponseHandlerLoop()
+{
+    std::cout << "[Server] 응답 처리 스레드 시작" << std::endl;
+
+    while (_is_running.load()) {
+        DBResponse response;
+        if (SendPackets.dequeue(response)) {
+            ProcessDBResponse(response);
+        }
+        else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    std::cout << "[Server] 응답 처리 스레드 종료" << std::endl;
+}
+
+void Server::ProcessDBResponse(const DBResponse& response)
+{
+    if (response.response_data.empty()) {
+        std::cerr << "[Server] 빈 응답 데이터" << std::endl;
+        return;
+    }
+
+    // 해당 클라이언트 소켓을 가진 WorkerThread 찾기
+    WorkerThread* targetWorker = FindWorkerThreadBySocket(response.client_socket);
+    if (targetWorker) {
+        // WorkerThread에 응답 전송 요청
+        targetWorker->SendToClient(response.client_socket, response.response_data);
+    }
+    else {
+        std::cerr << "[Server] 클라이언트 소켓을 찾을 수 없음: " << response.client_socket << std::endl;
+    }
+}
+
+WorkerThread* Server::FindWorkerThreadBySocket(SOCKET clientSocket)
+{
+    std::lock_guard<std::mutex> lock(_worker_threads_mutex);
+
+    for (auto& worker : _worker_threads) {
+        if (worker && worker->HasClient(clientSocket)) {
+            return worker.get();
+        }
+    }
+    return nullptr;
 }

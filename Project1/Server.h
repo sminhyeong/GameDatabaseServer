@@ -36,6 +36,13 @@ private:
     // Non-blocking accept를 위한 설정
     void SetNonBlocking(SOCKET sock);
 
+    std::unique_ptr<std::thread> _response_handler_thread;  // 응답 처리 스레드
+
+    // 응답 처리 함수들
+    void ResponseHandlerLoop();
+    void ProcessDBResponse(const DBResponse& response);
+    WorkerThread* FindWorkerThreadBySocket(SOCKET clientSocket);
+
 public:
     static Server* Instance();
     ~Server();

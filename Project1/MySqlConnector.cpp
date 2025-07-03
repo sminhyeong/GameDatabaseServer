@@ -1,77 +1,93 @@
 #include "MySqlConnector.h"
+#include <iostream>
 
-MySQLConnector::MySQLConnector() : driver(nullptr) {
-    driver = sql::mysql::get_mysql_driver_instance();
+MySqlConnector::MySqlConnector() : _is_init(false), timeout_sec(10)
+{
+    conn = nullptr;
+    conn_result = nullptr;
 }
 
-MySQLConnector::~MySQLConnector() {
-    if (connection) {
-        connection->close();
+MySqlConnector::~MySqlConnector()
+{
+    if (conn) {
+        mysql_close(conn);
+        conn = nullptr;
     }
 }
 
+bool MySqlConnector::Init()
+{
+    try
+    {
+        conn = mysql_init(NULL);
+        if (!conn) {
+            std::cerr << "mysql_init() failed" << std::endl;
+            return false;
+        }
 
-bool MySQLConnector::connect(const std::string& host, const std::string& user,
-    const std::string& password, const std::string& database) {
-    try {
-        // 데이터베이스 연결
-        connection.reset(driver->connect("tcp://" + host + ":3306", user, password));
-        connection->setSchema(database);
-
-        std::cout << "MySQL 연결 성공!" << std::endl;
+        mysql_options(conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout_sec);
+        mysql_options(conn, MYSQL_OPT_RECONNECT, &timeout_sec); // 자동 재연결
+        _is_init = true;
         return true;
-
     }
-    catch (sql::SQLException& e) {
-        std::cerr << "연결 실패: " << e.what() << std::endl;
-        std::cerr << "Error Code: " << e.getErrorCode() << std::endl;
+    catch (std::exception& e)
+    {
+        std::cerr << "MySQL Init Exception: " << e.what() << std::endl;
         return false;
     }
 }
 
-std::unique_ptr<sql::ResultSet> MySQLConnector::executeQuery(const std::string& query) {
-    try {
-        std::unique_ptr<sql::Statement> stmt(connection->createStatement());
-        std::unique_ptr<sql::ResultSet> res(stmt->executeQuery(query));
-        return res;
-    }
-    catch (sql::SQLException& e) {
-        std::cerr << "쿼리 실행 실패: " << e.what() << std::endl;
-        return nullptr;
-    }
-}
-
-// 연결 해제
-void MySQLConnector::disconnect() {
-    try {
-        if (connection && !connection->isClosed()) {
-            connection->close();
-            std::cout << "MySQL 연결이 성공적으로 해제되었습니다." << std::endl;
+bool MySqlConnector::Connect(std::string host, std::string userName, std::string pass, int port, std::string dbName)
+{
+    try
+    {
+        conn_result = mysql_real_connect(conn, host.c_str(), userName.c_str(), pass.c_str(), dbName.c_str(), port, NULL, 0);
+        if (conn_result) {
+            std::cout << "Success To Connect MySQL Database!" << std::endl;
+            return true;
         }
         else {
-            std::cout << "연결이 이미 해제되어 있거나 존재하지 않습니다." << std::endl;
+            std::cerr << "MySQL Connection failed: " << mysql_error(conn) << std::endl;
+            return false;
         }
     }
-    catch (sql::SQLException& e) {
-        std::cerr << "연결 해제 중 오류 발생: " << e.what() << std::endl;
-    }
-}
-
-// 연결 상태 확인
-bool MySQLConnector::isConnected() {
-    try {
-        return connection && !connection->isClosed();
-    }
-    catch (sql::SQLException& e) {
-        std::cerr << "연결 상태 확인 중 오류: " << e.what() << std::endl;
+    catch (std::exception& e)
+    {
+        std::cerr << "MySQL Connect Exception: " << e.what() << std::endl;
         return false;
     }
 }
 
-// 재연결
-void MySQLConnector::reconnect(const std::string& host, const std::string& user,
-    const std::string& password, const std::string& database) {
-    std::cout << "재연결을 시도합니다..." << std::endl;
-    disconnect();
-    connect(host, user, password, database);
+bool MySqlConnector::ExecuteQuery(const std::string& query)
+{
+    if (!conn || !_is_init) {
+        std::cerr << "MySQL not initialized or connected" << std::endl;
+        return false;
+    }
+
+    int result = mysql_query(conn, query.c_str());
+    if (result != 0) {
+        std::cerr << "Query failed: " << mysql_error(conn) << std::endl;
+        return false;
+    }
+    return true;
+}
+
+MYSQL_RES* MySqlConnector::GetResult()
+{
+    if (!conn) return nullptr;
+    return mysql_store_result(conn);
+}
+
+void MySqlConnector::FreeResult(MYSQL_RES* result)
+{
+    if (result) {
+        mysql_free_result(result);
+    }
+}
+
+int MySqlConnector::GetAffectedRows()
+{
+    if (!conn) return -1;
+    return static_cast<int>(mysql_affected_rows(conn));
 }

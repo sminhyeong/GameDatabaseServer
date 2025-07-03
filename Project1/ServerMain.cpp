@@ -1,6 +1,9 @@
 #include <iostream>
 #include <csignal>
 #include "Server.h"
+#include "mysql.h"
+
+using namespace std;
 
 std::atomic<bool> g_shutdown_requested(false);
 

@@ -125,6 +125,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ClientMain.cpp" />
+    <ClCompile Include="ClientPacketManager.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ClientPacketManager.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

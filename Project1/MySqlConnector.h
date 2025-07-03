@@ -1,25 +1,29 @@
 #pragma once
-#include "mysql/jdbc.h"
+#include <string>
+#include <memory>
+#include "Packet.h"
+#include <mysql.h>
 
-class MySQLConnector {
+class MySqlConnector
+{
 private:
-	sql::mysql::MySQL_Driver* driver;
-	std::unique_ptr<sql::Connection> connection;
+    bool _is_init;
+    MYSQL* conn;
+    MYSQL* conn_result;
+    unsigned int timeout_sec;
 
 public:
-	MySQLConnector();
-	~MySQLConnector();
-	
-	bool connect(const std::string& host, const std::string& user, const std::string& password, const std::string& database);
-	std::unique_ptr<sql::ResultSet> executeQuery(const std::string& query);
-	
-	// 연결 해제
-	void disconnect();
+    MySqlConnector();
+    ~MySqlConnector();
 
-	// 연결 상태 확인
-	bool isConnected();
+    bool Init();
+    bool Connect(std::string host, std::string userName, std::string pass, int port, std::string dbName);
 
-	// 재연결
-	void reconnect(const std::string& host, const std::string& user,
-		const std::string& password, const std::string& database);
+    // 쿼리 실행 함수들 추가
+    bool ExecuteQuery(const std::string& query);
+    MYSQL_RES* GetResult();
+    void FreeResult(MYSQL_RES* result);
+    int GetAffectedRows();
+
+    bool IsConnected() const { return conn && _is_init; }
 };

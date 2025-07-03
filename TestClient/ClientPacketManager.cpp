@@ -1,0 +1,438 @@
+#define NOMINMAX
+
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
+#include "ClientPacketManager.h"
+#include "flatbuffers/flatbuffers.h"
+#include "UserEvent_generated.h"
+
+ClientPacketManager::ClientPacketManager()
+{
+    ClearError();
+}
+
+ClientPacketManager::~ClientPacketManager()
+{
+}
+
+void ClientPacketManager::SetError(const std::string& error)
+{
+    _last_error = error;
+}
+
+void ClientPacketManager::ClearError()
+{
+    _last_error.clear();
+}
+
+bool ClientPacketManager::VerifyPacket(const uint8_t* data, size_t size)
+{
+    if (!data || size == 0) {
+        SetError("Invalid packet data");
+        return false;
+    }
+
+    flatbuffers::Verifier verifier(data, size);
+    return VerifyDatabasePacketBuffer(verifier);
+}
+
+// === 클라이언트 요청 패킷 생성 (C2S) ===
+
+std::vector<uint8_t> ClientPacketManager::CreateLoginRequest(const std::string& username, const std::string& password)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto usernameOffset = builder.CreateString(username);
+        auto passwordOffset = builder.CreateString(password);
+
+        auto loginRequest = CreateC2S_Login(builder, usernameOffset, passwordOffset);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_Login, loginRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateLoginRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateLogoutRequest(uint32_t user_id)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto logoutRequest = CreateC2S_Logout(builder, user_id);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_Logout, logoutRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateLogoutRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateAccountRequest(const std::string& username, const std::string& password, const std::string& nickname)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto usernameOffset = builder.CreateString(username);
+        auto passwordOffset = builder.CreateString(password);
+        auto nicknameOffset = builder.CreateString(nickname);
+
+        auto accountRequest = CreateC2S_CreateAccount(builder, usernameOffset, passwordOffset, nicknameOffset);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_CreateAccount, accountRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateAccountRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateItemDataRequest(uint32_t user_id, uint32_t request_type, uint32_t item_id, uint32_t item_count)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto itemRequest = CreateC2S_ItemData(builder, user_id, request_type, item_id, item_count);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_ItemData, itemRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateItemDataRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreatePlayerDataQueryRequest(uint32_t user_id)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto playerRequest = CreateC2S_PlayerData(builder, user_id, 0); // request_type = 0 (조회)
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_PlayerData, playerRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreatePlayerDataQueryRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreatePlayerDataUpdateRequest(uint32_t user_id, uint32_t level, uint32_t exp, uint32_t hp, uint32_t mp, float pos_x, float pos_y)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto playerRequest = CreateC2S_PlayerData(builder, user_id, 1, level, exp, hp, mp, pos_x, pos_y); // request_type = 1 (업데이트)
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_PlayerData, playerRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreatePlayerDataUpdateRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateMonsterDataRequest(uint32_t request_type, uint32_t monster_id)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto monsterRequest = CreateC2S_MonsterData(builder, request_type, monster_id);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_MonsterData, monsterRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateMonsterDataRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateChatSendRequest(uint32_t sender_id, uint32_t receiver_id, const std::string& message, uint32_t chat_type)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto messageOffset = builder.CreateString(message);
+        auto chatRequest = CreateC2S_PlayerChat(builder, 1, sender_id, receiver_id, messageOffset, chat_type); // request_type = 1 (전송)
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_PlayerChat, chatRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateChatSendRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateChatQueryRequest(uint32_t request_type, uint32_t sender_id, uint32_t receiver_id, uint32_t chat_type)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto chatRequest = CreateC2S_PlayerChat(builder, 0, sender_id, receiver_id, 0, chat_type); // request_type = 0 (조회)
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_PlayerChat, chatRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateChatQueryRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+// === 서버 응답 패킷 파싱 (S2C) ===
+
+const S2C_Login* ClientPacketManager::ParseLoginResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_Login) {
+        SetError("Invalid login response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_Login();
+}
+
+const S2C_Logout* ClientPacketManager::ParseLogoutResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_Logout) {
+        SetError("Invalid logout response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_Logout();
+}
+
+const S2C_CreateAccount* ClientPacketManager::ParseCreateAccountResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_CreateAccount) {
+        SetError("Invalid create account response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_CreateAccount();
+}
+
+const S2C_ItemData* ClientPacketManager::ParseItemDataResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_ItemData) {
+        SetError("Invalid item data response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_ItemData();
+}
+
+const S2C_PlayerData* ClientPacketManager::ParsePlayerDataResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_PlayerData) {
+        SetError("Invalid player data response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_PlayerData();
+}
+
+const S2C_MonsterData* ClientPacketManager::ParseMonsterDataResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_MonsterData) {
+        SetError("Invalid monster data response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_MonsterData();
+}
+
+const S2C_PlayerChat* ClientPacketManager::ParsePlayerChatResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_PlayerChat) {
+        SetError("Invalid player chat response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_PlayerChat();
+}
+
+// === 편의 함수들 ===
+
+bool ClientPacketManager::IsLoginSuccess(const S2C_Login* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsCreateAccountSuccess(const S2C_CreateAccount* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsPlayerDataValid(const S2C_PlayerData* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsItemDataValid(const S2C_ItemData* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+// === 유틸리티 함수들 ===
+
+EventType ClientPacketManager::GetPacketType(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return EventType_NONE;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    return packet ? packet->packet_event_type() : EventType_NONE;
+}
+
+uint32_t ClientPacketManager::GetClientSocket(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return 0;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    return packet ? packet->client_socket() : 0;
+}
+
+bool ClientPacketManager::IsValidPacket(const uint8_t* data, size_t size)
+{
+    return VerifyPacket(data, size);
+}
+
+std::string ClientPacketManager::GetPacketTypeName(EventType packet_type)
+{
+    switch (packet_type) {
+    case EventType_C2S_Login: return "C2S_Login";
+    case EventType_S2C_Login: return "S2C_Login";
+    case EventType_C2S_Logout: return "C2S_Logout";
+    case EventType_S2C_Logout: return "S2C_Logout";
+    case EventType_C2S_CreateAccount: return "C2S_CreateAccount";
+    case EventType_S2C_CreateAccount: return "S2C_CreateAccount";
+    case EventType_C2S_ItemData: return "C2S_ItemData";
+    case EventType_S2C_ItemData: return "S2C_ItemData";
+    case EventType_C2S_PlayerData: return "C2S_PlayerData";
+    case EventType_S2C_PlayerData: return "S2C_PlayerData";
+    case EventType_C2S_MonsterData: return "C2S_MonsterData";
+    case EventType_S2C_MonsterData: return "S2C_MonsterData";
+    case EventType_C2S_PlayerChat: return "C2S_PlayerChat";
+    case EventType_S2C_PlayerChat: return "S2C_PlayerChat";
+    default: return "Unknown";
+    }
+}
+
+std::string ClientPacketManager::GetResultCodeName(ResultCode result)
+{
+    switch (result) {
+    case ResultCode_SUCCESS: return "SUCCESS";
+    case ResultCode_FAIL: return "FAIL";
+    case ResultCode_INVALID_USER: return "INVALID_USER";
+    case ResultCode_USER_NOT_FOUND: return "USER_NOT_FOUND";
+    default: return "Unknown";
+    }
+}

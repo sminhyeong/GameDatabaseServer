@@ -103,16 +103,17 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)Common;$(SolutionDir)Common\mysql-connector-c++-9.3.0-winx64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Common;C:\Program Files\MariaDB 11.8\include\mysql;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)Common\mysql-connector-c++-9.3.0-winx64\lib64\vs14;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>mysqlcppconn.lib;mysqlcppconn-static.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Program Files\MariaDB 11.8\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libmariadb.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy "$(SolutionDir)Common\mysql-connector-c++-9.3.0-winx64\lib64\*.dll" "$(OutDir)"</Command>
+      <Command>copy "C:\Program Files\MariaDB 11.8\lib\*.dll" "$(OutDir)"
+</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -132,6 +133,7 @@
   <ItemGroup>
     <ClCompile Include="DatabaseThread.cpp" />
     <ClCompile Include="MySqlConnector.cpp" />
+    <ClCompile Include="ServerPacketManager.cpp" />
     <ClCompile Include="WorkerThread.cpp" />
     <ClCompile Include="Server.cpp" />
     <ClCompile Include="ServerMain.cpp" />
@@ -139,6 +141,7 @@
   <ItemGroup>
     <ClInclude Include="DatabaseThread.h" />
     <ClInclude Include="MySqlConnector.h" />
+    <ClInclude Include="ServerPacketManager.h" />
     <ClInclude Include="WorkerThread.h" />
     <ClInclude Include="Server.h" />
   </ItemGroup>
