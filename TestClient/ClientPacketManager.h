@@ -4,7 +4,7 @@
 #include <string>
 #include <cstdint>
 
-// 전방 선언 (헤더 충돌 방지)
+// 전방 선언 (헤더 중복 방지)
 struct DatabasePacket;
 struct S2C_Login;
 struct S2C_Logout;
@@ -13,6 +13,9 @@ struct S2C_ItemData;
 struct S2C_PlayerData;
 struct S2C_MonsterData;
 struct S2C_PlayerChat;
+struct S2C_ShopList;
+struct S2C_ShopItems;
+struct S2C_ShopTransaction;
 
 enum EventType : uint8_t;
 enum ResultCode : int8_t;
@@ -61,6 +64,15 @@ public:
     // 채팅 조회 요청
     std::vector<uint8_t> CreateChatQueryRequest(uint32_t request_type, uint32_t sender_id, uint32_t receiver_id, uint32_t chat_type);
 
+    // 상점 목록 요청
+    std::vector<uint8_t> CreateShopListRequest(uint32_t request_type = 0, uint32_t map_id = 0);
+
+    // 상점 아이템 목록 요청
+    std::vector<uint8_t> CreateShopItemsRequest(uint32_t shop_id);
+
+    // 상점 거래 요청 (구매/판매)
+    std::vector<uint8_t> CreateShopTransactionRequest(uint32_t user_id, uint32_t shop_id, uint32_t item_id, uint32_t item_count, uint32_t transaction_type);
+
     // === 서버 응답 패킷 파싱 (S2C) ===
     // FlatBuffers 구조체 포인터를 직접 반환
 
@@ -85,6 +97,15 @@ public:
     // 채팅 응답 파싱
     const S2C_PlayerChat* ParsePlayerChatResponse(const uint8_t* data, size_t size);
 
+    // 상점 목록 응답 파싱
+    const S2C_ShopList* ParseShopListResponse(const uint8_t* data, size_t size);
+
+    // 상점 아이템 응답 파싱
+    const S2C_ShopItems* ParseShopItemsResponse(const uint8_t* data, size_t size);
+
+    // 상점 거래 응답 파싱
+    const S2C_ShopTransaction* ParseShopTransactionResponse(const uint8_t* data, size_t size);
+
     // === 편의 함수들 ===
 
     // 로그인 결과 확인
@@ -98,6 +119,15 @@ public:
 
     // 아이템 데이터 조회 성공 확인
     bool IsItemDataValid(const S2C_ItemData* response);
+
+    // 상점 목록 조회 성공 확인
+    bool IsShopListValid(const S2C_ShopList* response);
+
+    // 상점 아이템 조회 성공 확인
+    bool IsShopItemsValid(const S2C_ShopItems* response);
+
+    // 상점 거래 성공 확인
+    bool IsShopTransactionSuccess(const S2C_ShopTransaction* response);
 
     // === 유틸리티 함수들 ===
 

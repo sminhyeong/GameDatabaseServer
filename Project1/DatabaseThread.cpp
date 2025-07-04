@@ -1,8 +1,6 @@
-#define NOMINMAX
+ï»¿#define NOMINMAX
 
 #include "DatabaseThread.h"
-
-// ÇÊ¿äÇÑ Çì´õµé Æ÷ÇÔ
 #include "LockFreeQueue.h"
 #include "Packet.h"
 #include "MySqlConnector.h"
@@ -19,10 +17,10 @@ DatabaseThread::DatabaseThread(LockFreeQueue<Task>* InRecvQueue, LockFreeQueue<D
 	_sql_connector = std::make_unique<MySqlConnector>();
 	_packet_manager = std::make_unique<ServerPacketManager>();
 
-	// ±âº» ¿¬°á Á¤º¸ ¼³Á¤
+	// ê¸°ë³¸ ì—°ê²° ì •ë³´ ì„¤ì •
 	_host = "127.0.0.1";
 	_user = "root";
-	_password = "1234";
+	_password = "projectc";
 	_database = "gamedb";
 }
 
@@ -47,7 +45,7 @@ void DatabaseThread::SetConnectionInfo(const std::string& host, const std::strin
 bool DatabaseThread::ConnectDB()
 {
 	try {
-		std::cout << "[DatabaseThread] µ¥ÀÌÅÍº£ÀÌ½º ¿¬°á ½ÃµµÁß..." << std::endl;
+		std::cout << "[DatabaseThread] ë°ì´í„°ë² ì´ìŠ¤ ì—°ê²° ì‹œë„ì¤‘..." << std::endl;
 
 		bool result = _sql_connector->Init();
 		if (result) {
@@ -55,28 +53,34 @@ bool DatabaseThread::ConnectDB()
 		}
 
 		if (result) {
-			std::cout << "[DatabaseThread] µ¥ÀÌÅÍº£ÀÌ½º ¿¬°á ¼º°ø!" << std::endl;
+			std::cout << "[DatabaseThread] ë°ì´í„°ë² ì´ìŠ¤ ì—°ê²° ì„±ê³µ!" << std::endl;
 
-			// ¿¬°á ¼º°ø ½Ã ½º·¹µå ½ÃÀÛ
+			// ì‚¬ìš©ì ì„¸ì…˜ í…Œì´ë¸” í™•ì¸ ë° ì´ˆê¸°í™”
+			if (!InitializeUserSessions()) {
+				std::cerr << "[DatabaseThread] ì‚¬ìš©ì ì„¸ì…˜ ì´ˆê¸°í™” ì‹¤íŒ¨" << std::endl;
+				return false;
+			}
+
+			// ì—°ê²° ì„±ê³µ ì‹œ ìŠ¤ë ˆë“œ ì‹œì‘
 			_is_running = true;
 			_db_thread = std::thread(&DatabaseThread::Run, this);
-
 			return true;
 		}
 		else {
-			std::cerr << "[DatabaseThread] µ¥ÀÌÅÍº£ÀÌ½º ¿¬°á ½ÇÆĞ!" << std::endl;
+			std::cerr << "[DatabaseThread] ë°ì´í„°ë² ì´ìŠ¤ ì—°ê²° ì‹¤íŒ¨!" << std::endl;
 			return false;
 		}
 	}
 	catch (const std::exception& e) {
-		std::cerr << "[DatabaseThread] ¿¹¿Ü ¹ß»ı: " << e.what() << std::endl;
+		std::cerr << "[DatabaseThread] ì˜ˆì™¸ ë°œìƒ: " << e.what() << std::endl;
 		return false;
 	}
 }
 
 void DatabaseThread::Stop()
 {
-	std::cout << "[DatabaseThread] ÁßÁö ½ÅÈ£ Àü¼Û..." << std::endl;
+	std::cout << "[DatabaseThread] ì •ì§€ ì‹ í˜¸ ì „ì†¡..." << std::endl;
+	DisconnectAllUsers();
 	_is_running.store(false);
 }
 
@@ -88,20 +92,18 @@ bool DatabaseThread::CheckDBConnection()
 bool DatabaseThread::ReconnectIfNeeded()
 {
 	if (!CheckDBConnection()) {
-		std::cout << "[DatabaseThread] DB ¿¬°á ²÷¾îÁü, Àç¿¬°á ½Ãµµ..." << std::endl;
+		std::cout << "[DatabaseThread] DB ì—°ê²° ëŠì–´ì§, ì¬ì—°ê²° ì‹œë„..." << std::endl;
 
-		// ±âÁ¸ ¿¬°á Á¤¸®
 		_sql_connector.reset();
 		_sql_connector = std::make_unique<MySqlConnector>();
 
-		// Àç¿¬°á ½Ãµµ
 		if (_sql_connector->Init() &&
 			_sql_connector->Connect(_host, _user, _password, _port, _database)) {
-			std::cout << "[DatabaseThread] DB Àç¿¬°á ¼º°ø!" << std::endl;
+			std::cout << "[DatabaseThread] DB ì¬ì—°ê²° ì„±ê³µ!" << std::endl;
 			return true;
 		}
 		else {
-			std::cerr << "[DatabaseThread] DB Àç¿¬°á ½ÇÆĞ!" << std::endl;
+			std::cerr << "[DatabaseThread] DB ì¬ì—°ê²° ì‹¤íŒ¨!" << std::endl;
 			return false;
 		}
 	}
@@ -123,15 +125,87 @@ std::string DatabaseThread::GetStatus() const
 	return ss.str();
 }
 
+// === ê°„ì†Œí™”ëœ ì„¸ì…˜ ê´€ë¦¬ ===
+
+bool DatabaseThread::InitializeUserSessions()
+{
+	if (!CheckDBConnection()) {
+		return false;
+	}
+
+	try {
+		// ëª¨ë“  ì‚¬ìš©ìë¥¼ ì˜¤í”„ë¼ì¸ìœ¼ë¡œ ì„¤ì •
+		std::string resetQuery = "UPDATE user_sessions SET is_online = FALSE, client_socket = 0, last_activity = NOW()";
+		if (_sql_connector->ExecuteQuery(resetQuery)) {
+			int affected = _sql_connector->GetAffectedRows();
+			std::cout << "[DatabaseThread] " << affected << "ê°œì˜ ê¸°ì¡´ ì„¸ì…˜ì„ ì˜¤í”„ë¼ì¸ìœ¼ë¡œ ì´ˆê¸°í™”í–ˆìŠµë‹ˆë‹¤." << std::endl;
+			return true;
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] ì„¸ì…˜ ì´ˆê¸°í™” ì‹¤íŒ¨: " << e.what() << std::endl;
+	}
+	return false;
+}
+
+bool DatabaseThread::SetUserOnlineStatus(uint32_t user_id, bool is_online)
+{
+	if (!CheckDBConnection()) {
+		return false;
+	}
+
+	try {
+		std::stringstream query;
+		if (is_online) {
+			query << "INSERT INTO user_sessions (user_id, is_online, login_time, last_activity, client_socket) "
+				<< "VALUES (" << user_id << ", 1, NOW(), NOW(), 0) "
+				<< "ON DUPLICATE KEY UPDATE is_online = 1, login_time = NOW(), last_activity = NOW()";
+		}
+		else {
+			query << "UPDATE user_sessions SET is_online = 0, last_activity = NOW(), client_socket = 0 "
+				<< "WHERE user_id = " << user_id;
+		}
+
+		return _sql_connector->ExecuteQuery(query.str());
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] SetUserOnlineStatus ì˜ˆì™¸: " << e.what() << std::endl;
+		return false;
+	}
+}
+
+void DatabaseThread::DisconnectAllUsers()
+{
+	if (!CheckDBConnection()) return;
+
+	try {
+		std::string query = "UPDATE user_sessions SET is_online = FALSE, client_socket = 0, last_activity = NOW()";
+		if (_sql_connector->ExecuteQuery(query)) {
+			int affected = _sql_connector->GetAffectedRows();
+			std::cout << "[DatabaseThread] ì„œë²„ ì¢…ë£Œ - " << affected << "ëª…ì˜ ì‚¬ìš©ìë¥¼ ì˜¤í”„ë¼ì¸ìœ¼ë¡œ ì„¤ì •í–ˆìŠµë‹ˆë‹¤." << std::endl;
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] DisconnectAllUsers ì˜ˆì™¸: " << e.what() << std::endl;
+	}
+}
+
+void DatabaseThread::DisconnectUser(uint32_t user_id)
+{
+	SetUserOnlineStatus(user_id, false);
+}
+
+// === ìŠ¤ë ˆë“œ ì‹¤í–‰ ë° íƒœìŠ¤í¬ ì²˜ë¦¬ ===
+
 void DatabaseThread::Run()
 {
-	std::cout << "[DatabaseThread] DB Ã³¸® ½º·¹µå ½ÃÀÛ" << std::endl;
+	std::cout << "[DatabaseThread] DB ì²˜ë¦¬ ìŠ¤ë ˆë“œ ì‹œì‘" << std::endl;
 
 	auto last_connection_check = std::chrono::steady_clock::now();
-	const auto connection_check_interval = std::chrono::seconds(30); // 30ÃÊ¸¶´Ù ¿¬°á »óÅÂ Ã¼Å©
+	const auto connection_check_interval = std::chrono::seconds(30);
 
 	while (_is_running.load()) {
-		// ÁÖ±âÀûÀ¸·Î DB ¿¬°á »óÅÂ Ã¼Å©
+		// ì£¼ê¸°ì ìœ¼ë¡œ DB ì—°ê²° ìƒíƒœ ì²´í¬
 		auto now = std::chrono::steady_clock::now();
 		if (now - last_connection_check >= connection_check_interval) {
 			if (!ReconnectIfNeeded()) {
@@ -141,53 +215,45 @@ void DatabaseThread::Run()
 			last_connection_check = now;
 		}
 
-		// Å¥¿¡¼­ ÅÂ½ºÅ© Ã³¸®
+		// íì—ì„œ íƒœìŠ¤í¬ ì²˜ë¦¬
 		Task task;
 		if (RecvQueue->dequeue(task)) {
 			try {
 				ProcessTask(task);
 			}
 			catch (const std::exception& e) {
-				std::cerr << "[DatabaseThread] ÅÂ½ºÅ© Ã³¸® Áß ¿¹¿Ü ¹ß»ı: " << e.what() << std::endl;
+				std::cerr << "[DatabaseThread] íƒœìŠ¤í¬ ì²˜ë¦¬ ì¤‘ ì˜ˆì™¸ ë°œìƒ: " << e.what() << std::endl;
 				SendErrorResponse(task, EventType_NONE, ResultCode_FAIL);
 			}
 		}
 		else {
-			// Å¥°¡ ºñ¾îÀÖÀ¸¸é Àá½Ã ´ë±â
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 	}
 
-	std::cout << "[DatabaseThread] DB Ã³¸® ½º·¹µå Á¾·á" << std::endl;
+	std::cout << "[DatabaseThread] DB ì²˜ë¦¬ ìŠ¤ë ˆë“œ ì¢…ë£Œ" << std::endl;
 }
 
 void DatabaseThread::ProcessTask(const Task& task)
 {
 	if (task.flatbuffer_data.empty()) {
-		std::cerr << "[DatabaseThread] ºó FlatBuffer µ¥ÀÌÅÍ" << std::endl;
+		std::cerr << "[DatabaseThread] ë¹ˆ FlatBuffer ë°ì´í„°" << std::endl;
 		return;
 	}
 
-	// DB ¿¬°á »óÅÂ Ã¼Å©
-	if (!CheckDBConnection()) {
-		std::cerr << "[DatabaseThread] DB ¿¬°á ¾øÀ½, Àç¿¬°á ½Ãµµ..." << std::endl;
-		if (!ReconnectIfNeeded()) {
-			std::cerr << "[DatabaseThread] DB Àç¿¬°á ½ÇÆĞ, ÅÂ½ºÅ© ½ºÅµ" << std::endl;
-			return;
-		}
+	if (!CheckDBConnection() && !ReconnectIfNeeded()) {
+		std::cerr << "[DatabaseThread] DB ì—°ê²° ì‹¤íŒ¨, íƒœìŠ¤í¬ ìŠ¤í‚µ" << std::endl;
+		return;
 	}
 
-	// ÆĞÅ¶ À¯È¿¼º °Ë»ç
 	if (!_packet_manager->IsValidPacket(task.flatbuffer_data.data(), task.flatbuffer_data.size())) {
-		std::cerr << "[DatabaseThread] Àß¸øµÈ ÆĞÅ¶: " << _packet_manager->GetLastError() << std::endl;
+		std::cerr << "[DatabaseThread] ì˜ëª»ëœ íŒ¨í‚·: " << _packet_manager->GetLastError() << std::endl;
 		return;
 	}
 
-	// ÆĞÅ¶ Å¸ÀÔ È®ÀÎ
 	EventType packetType = _packet_manager->GetPacketType(task.flatbuffer_data.data(), task.flatbuffer_data.size());
-	std::cout << "[DatabaseThread] Ã³¸® ÁßÀÎ ÆĞÅ¶: " << _packet_manager->GetPacketTypeName(packetType) << std::endl;
+	std::cout << "[DatabaseThread] ì²˜ë¦¬ ì¤‘ì¸ íŒ¨í‚·: " << _packet_manager->GetPacketTypeName(packetType) << std::endl;
 
-	// ÆĞÅ¶ Å¸ÀÔº° Ã³¸®
 	switch (packetType) {
 	case EventType_C2S_Login:
 		HandleLoginRequest(task);
@@ -210,63 +276,95 @@ void DatabaseThread::ProcessTask(const Task& task)
 	case EventType_C2S_PlayerChat:
 		HandlePlayerChatRequest(task);
 		break;
+	case EventType_C2S_ShopList:
+		HandleShopListRequest(task);
+		break;
+	case EventType_C2S_ShopItems:
+		HandleShopItemsRequest(task);
+		break;
+	case EventType_C2S_ShopTransaction:
+		HandleShopTransactionRequest(task);
+		break;
 	default:
-		std::cout << "[DatabaseThread] Ã³¸®µÇÁö ¾ÊÀº ÆĞÅ¶ Å¸ÀÔ: " << static_cast<int>(packetType) << std::endl;
+		std::cout << "[DatabaseThread] ì²˜ë¦¬ë˜ì§€ ì•Šì€ íŒ¨í‚· íƒ€ì…: " << static_cast<int>(packetType) << std::endl;
 		break;
 	}
 }
+
+// === ê°„ì†Œí™”ëœ í•¸ë“¤ëŸ¬ë“¤ ===
 
 void DatabaseThread::HandleLoginRequest(const Task& task)
 {
 	const C2S_Login* loginReq = _packet_manager->ParseLoginRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!loginReq || !_packet_manager->ValidateLoginRequest(loginReq)) {
-		std::cerr << "[DatabaseThread] ·Î±×ÀÎ ¿äÃ» °ËÁõ ½ÇÆĞ: " << _packet_manager->GetLastError() << std::endl;
+		std::cerr << "[DatabaseThread] ë¡œê·¸ì¸ ìš”ì²­ ê²€ì¦ ì‹¤íŒ¨: " << _packet_manager->GetLastError() << std::endl;
 		SendErrorResponse(task, EventType_S2C_Login, ResultCode_INVALID_USER);
 		return;
 	}
 
-	std::cout << "[DatabaseThread] ·Î±×ÀÎ ¿äÃ» Ã³¸®: " << loginReq->username()->c_str() << std::endl;
+	std::cout << "[DatabaseThread] ë¡œê·¸ì¸ ìš”ì²­ ì²˜ë¦¬: " << loginReq->username()->c_str() << std::endl;
 
-	if (!CheckDBConnection()) {
-		std::cerr << "[DatabaseThread] µ¥ÀÌÅÍº£ÀÌ½º ¿¬°á ¾øÀ½" << std::endl;
-		SendErrorResponse(task, EventType_S2C_Login, ResultCode_FAIL);
-		return;
-	}
-
-	// SQL Äõ¸® ÁØºñ (»ç¿ëÀÚ ÀÎÁõ + ·¹º§ Á¤º¸)
+	// ê°„ì†Œí™”ëœ ë¡œê·¸ì¸ ì²˜ë¦¬: ì¸ì¦ê³¼ ì¤‘ë³µ ë¡œê·¸ì¸ ì²´í¬ë¥¼ í•œ ë²ˆì—
 	std::stringstream query;
-	query << "SELECT u.user_id, COALESCE(p.level, 1) as level "
+	query << "SELECT u.user_id, u.nickname, COALESCE(p.level, 1) as level, "
+		<< "COALESCE(s.is_online, 0) as is_online "
 		<< "FROM users u "
 		<< "LEFT JOIN player_data p ON u.user_id = p.user_id "
+		<< "LEFT JOIN user_sessions s ON u.user_id = s.user_id "
 		<< "WHERE u.username = '" << loginReq->username()->c_str()
 		<< "' AND u.password = '" << loginReq->password()->c_str()
 		<< "' AND u.is_active = 1";
 
-	if (_sql_connector->ExecuteQuery(query.str())) {
-		MYSQL_RES* result = _sql_connector->GetResult();
-		if (result) {
-			// MySQL °á°ú¸¦ ÀÚµ¿À¸·Î FlatBuffer ÀÀ´äÀ¸·Î º¯È¯
-			auto responsePacket = _packet_manager->CreateLoginResponseFromDB(result, loginReq->username()->str(), task.client_socket);
+	if (!_sql_connector->ExecuteQuery(query.str())) {
+		std::cerr << "[DatabaseThread] ë¡œê·¸ì¸ ì¿¼ë¦¬ ì‹¤í–‰ ì‹¤íŒ¨" << std::endl;
+		SendErrorResponse(task, EventType_S2C_Login, ResultCode_FAIL);
+		return;
+	}
 
-			// ¸¶Áö¸· ·Î±×ÀÎ ½Ã°£ ¾÷µ¥ÀÌÆ®
-			if (!responsePacket.empty()) {
-				std::stringstream updateQuery;
-				updateQuery << "UPDATE users SET last_login = NOW() WHERE username = '" << loginReq->username()->c_str() << "'";
-				_sql_connector->ExecuteQuery(updateQuery.str());
+	MYSQL_RES* result = _sql_connector->GetResult();
+	if (!result) {
+		SendErrorResponse(task, EventType_S2C_Login, ResultCode_FAIL);
+		return;
+	}
 
-				std::cout << "[DatabaseThread] ·Î±×ÀÎ ¼º°ø: " << loginReq->username()->c_str() << std::endl;
-			}
+	MYSQL_ROW row = mysql_fetch_row(result);
+	if (!row) {
+		_sql_connector->FreeResult(result);
+		std::cout << "[DatabaseThread] ì˜ëª»ëœ ì‚¬ìš©ìëª… ë˜ëŠ” ë¹„ë°€ë²ˆí˜¸" << std::endl;
+		SendErrorResponse(task, EventType_S2C_Login, ResultCode_INVALID_USER);
+		return;
+	}
 
-			SendResponse(task, responsePacket);
-			_sql_connector->FreeResult(result);
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_Login, ResultCode_FAIL);
-		}
+	uint32_t user_id = std::stoul(row[0]);
+	std::string nickname = row[1] ? row[1] : "";
+	uint32_t level = std::stoul(row[2]);
+	bool is_online = row[3] && std::string(row[3]) == "1";
+
+	_sql_connector->FreeResult(result);
+
+	// ì¤‘ë³µ ë¡œê·¸ì¸ ì²´í¬
+	if (is_online) {
+		std::cout << "[DatabaseThread] ì¤‘ë³µ ë¡œê·¸ì¸ ì°¨ë‹¨: ì‚¬ìš©ì ID " << user_id << std::endl;
+		SendErrorResponse(task, EventType_S2C_Login, ResultCode_FAIL);
+		return;
+	}
+
+	// ì˜¨ë¼ì¸ ìƒíƒœë¡œ ì„¤ì •
+	if (SetUserOnlineStatus(user_id, true)) {
+		// ë§ˆì§€ë§‰ ë¡œê·¸ì¸ ì‹œê°„ ì—…ë°ì´íŠ¸
+		std::stringstream updateQuery;
+		updateQuery << "UPDATE users SET last_login = NOW() WHERE user_id = " << user_id;
+		_sql_connector->ExecuteQuery(updateQuery.str());
+
+		auto responsePacket = _packet_manager->CreateLoginResponse(
+			ResultCode_SUCCESS, user_id, loginReq->username()->str(), nickname, level, task.client_socket);
+		SendResponse(task, responsePacket);
+
+		std::cout << "[DatabaseThread] ë¡œê·¸ì¸ ì„±ê³µ: " << loginReq->username()->c_str() << std::endl;
 	}
 	else {
-		std::cerr << "[DatabaseThread] ·Î±×ÀÎ Äõ¸® ½ÇÇà ½ÇÆĞ" << std::endl;
+		std::cerr << "[DatabaseThread] ì˜¨ë¼ì¸ ìƒíƒœ ì„¤ì • ì‹¤íŒ¨" << std::endl;
 		SendErrorResponse(task, EventType_S2C_Login, ResultCode_FAIL);
 	}
 }
@@ -276,23 +374,27 @@ void DatabaseThread::HandleLogoutRequest(const Task& task)
 	const C2S_Logout* logoutReq = _packet_manager->ParseLogoutRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!logoutReq) {
-		std::cerr << "[DatabaseThread] ·Î±×¾Æ¿ô ¿äÃ» ÆÄ½Ì ½ÇÆĞ" << std::endl;
 		SendErrorResponse(task, EventType_S2C_Logout, ResultCode_FAIL);
 		return;
 	}
 
-	std::cout << "[DatabaseThread] ·Î±×¾Æ¿ô ¿äÃ» Ã³¸®: »ç¿ëÀÚ ID " << logoutReq->user_id() << std::endl;
+	uint32_t user_id = logoutReq->user_id();
+	std::cout << "[DatabaseThread] ë¡œê·¸ì•„ì›ƒ ìš”ì²­ ì²˜ë¦¬: ì‚¬ìš©ì ID " << user_id << std::endl;
 
-	// ·Î±×¾Æ¿ô ½Ã°£ ¾÷µ¥ÀÌÆ® (¼±ÅÃ»çÇ×)
-	if (CheckDBConnection()) {
-		std::stringstream updateQuery;
-		updateQuery << "UPDATE users SET last_logout = NOW() WHERE user_id = " << logoutReq->user_id();
-		_sql_connector->ExecuteQuery(updateQuery.str());
-	}
+	// ì‚¬ìš©ì ì˜¤í”„ë¼ì¸ ìƒíƒœë¡œ ì„¤ì •
+	SetUserOnlineStatus(user_id, false);
 
-	// ·Î±×¾Æ¿ôÀº Æ¯º°ÇÑ DB ÀÛ¾÷ÀÌ ÇÊ¿äÇÏÁö ¾ÊÀ¸¹Ç·Î ¼º°ø ÀÀ´ä¸¸ Àü¼Û
-	auto responsePacket = _packet_manager->CreateLogoutResponse(ResultCode_SUCCESS, "·Î±×¾Æ¿ô ¿Ï·á", task.client_socket);
+	// ë¡œê·¸ì•„ì›ƒ ì‹œê°„ ì—…ë°ì´íŠ¸
+	std::stringstream updateQuery;
+	updateQuery << "UPDATE users SET last_logout = NOW() WHERE user_id = " << user_id;
+	_sql_connector->ExecuteQuery(updateQuery.str());
+
+	// í•­ìƒ ì„±ê³µ ì‘ë‹µ (í´ë¼ì´ì–¸íŠ¸ ë¬´í•œ ëŒ€ê¸° ë°©ì§€)
+	auto responsePacket = _packet_manager->CreateLogoutResponse(
+		ResultCode_SUCCESS, "ë¡œê·¸ì•„ì›ƒ ì™„ë£Œ", task.client_socket);
 	SendResponse(task, responsePacket);
+
+	std::cout << "[DatabaseThread] ë¡œê·¸ì•„ì›ƒ ì²˜ë¦¬ ì™„ë£Œ: ì‚¬ìš©ì ID " << user_id << std::endl;
 }
 
 void DatabaseThread::HandleCreateAccountRequest(const Task& task)
@@ -300,82 +402,72 @@ void DatabaseThread::HandleCreateAccountRequest(const Task& task)
 	const C2S_CreateAccount* accountReq = _packet_manager->ParseCreateAccountRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!accountReq || !_packet_manager->ValidateCreateAccountRequest(accountReq)) {
-		std::cerr << "[DatabaseThread] °èÁ¤ »ı¼º ¿äÃ» °ËÁõ ½ÇÆĞ: " << _packet_manager->GetLastError() << std::endl;
 		SendErrorResponse(task, EventType_S2C_CreateAccount, ResultCode_INVALID_USER);
 		return;
 	}
 
-	std::cout << "[DatabaseThread] °èÁ¤ »ı¼º ¿äÃ» Ã³¸®: " << accountReq->username()->c_str() << std::endl;
+	std::cout << "[DatabaseThread] ê³„ì • ìƒì„± ìš”ì²­ ì²˜ë¦¬: " << accountReq->username()->c_str() << std::endl;
 
-	if (!CheckDBConnection()) {
-		SendErrorResponse(task, EventType_S2C_CreateAccount, ResultCode_FAIL);
-		return;
-	}
-
-	// 1. Áßº¹ »ç¿ëÀÚ¸í È®ÀÎ
-	std::stringstream checkQuery;
-	checkQuery << "SELECT user_id FROM users WHERE username = '" << accountReq->username()->c_str() << "'";
-
-	if (_sql_connector->ExecuteQuery(checkQuery.str())) {
-		MYSQL_RES* result = _sql_connector->GetResult();
-		if (result) {
-			MYSQL_ROW row = mysql_fetch_row(result);
-			if (row) {
-				// ÀÌ¹Ì Á¸ÀçÇÏ´Â »ç¿ëÀÚ
-				_sql_connector->FreeResult(result);
-				auto responsePacket = _packet_manager->CreateAccountErrorResponse(ResultCode_FAIL, "ÀÌ¹Ì Á¸ÀçÇÏ´Â »ç¿ëÀÚ¸íÀÔ´Ï´Ù", task.client_socket);
-				SendResponse(task, responsePacket);
-				return;
-			}
-			_sql_connector->FreeResult(result);
-		}
-	}
-
-	// 2. »õ °èÁ¤ »ı¼º
-	std::stringstream insertQuery;
-	insertQuery << "INSERT INTO users (username, password, nickname, created_at) VALUES ('"
-		<< accountReq->username()->c_str() << "', '"
+	// ì¤‘ë³µ ì‚¬ìš©ìëª… í™•ì¸ê³¼ ê³„ì • ìƒì„±ì„ í•œ ë²ˆì— ì²˜ë¦¬
+	std::stringstream query;
+	query << "INSERT INTO users (username, password, nickname, created_at) "
+		<< "SELECT '" << accountReq->username()->c_str() << "', '"
 		<< accountReq->password()->c_str() << "', '"
-		<< accountReq->nickname()->c_str() << "', NOW())";
+		<< accountReq->nickname()->c_str() << "', NOW() "
+		<< "WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = '" << accountReq->username()->c_str() << "')";
 
-	if (_sql_connector->ExecuteQuery(insertQuery.str())) {
-		// »ı¼ºµÈ user_id °¡Á®¿À±â
-		std::stringstream getIdQuery;
-		getIdQuery << "SELECT LAST_INSERT_ID()";
-
-		if (_sql_connector->ExecuteQuery(getIdQuery.str())) {
+	if (_sql_connector->ExecuteQuery(query.str()) && _sql_connector->GetAffectedRows() > 0) {
+		// ìƒì„±ëœ user_id ê°€ì ¸ì˜¤ê¸°
+		std::string getIdQuery = "SELECT LAST_INSERT_ID()";
+		if (_sql_connector->ExecuteQuery(getIdQuery)) {
 			MYSQL_RES* result = _sql_connector->GetResult();
 			if (result) {
 				MYSQL_ROW row = mysql_fetch_row(result);
 				if (row) {
 					uint32_t new_user_id = std::stoul(row[0]);
+					_sql_connector->FreeResult(result);
 
-					// ±âº» ÇÃ·¹ÀÌ¾î µ¥ÀÌÅÍ »ı¼º
-					std::stringstream playerInsert;
-					playerInsert << "INSERT INTO player_data (user_id, level, exp, hp, mp, attack, defense, gold, map_id, pos_x, pos_y, created_at) VALUES ("
-						<< new_user_id << ", 1, 0, 100, 50, 10, 5, 1000, 1, 0.0, 0.0, NOW())";
-					_sql_connector->ExecuteQuery(playerInsert.str());
+					// ê¸°ë³¸ í”Œë ˆì´ì–´ ë°ì´í„° ìƒì„±
+					CreateDefaultPlayerData(new_user_id);
 
-					// ±âº» ¾ÆÀÌÅÛ Áö±Ş (³ª¹« °Ë, °¡Á× °©¿Ê)
-					std::stringstream itemInsert;
-					itemInsert << "INSERT INTO player_inventory (user_id, item_id, item_count, created_at) VALUES "
-						<< "(" << new_user_id << ", 1, 1, NOW()), "
-						<< "(" << new_user_id << ", 3, 1, NOW())";
-					_sql_connector->ExecuteQuery(itemInsert.str());
-
-					auto responsePacket = _packet_manager->CreateAccountResponse(ResultCode_SUCCESS, new_user_id, "°èÁ¤ »ı¼º ¼º°ø", task.client_socket);
+					auto responsePacket = _packet_manager->CreateAccountResponse(
+						ResultCode_SUCCESS, new_user_id, "ê³„ì • ìƒì„± ì„±ê³µ", task.client_socket);
 					SendResponse(task, responsePacket);
 
-					std::cout << "[DatabaseThread] °èÁ¤ »ı¼º ¼º°ø: " << accountReq->username()->c_str() << " (ID: " << new_user_id << ")" << std::endl;
+					std::cout << "[DatabaseThread] ê³„ì • ìƒì„± ì„±ê³µ: " << accountReq->username()->c_str()
+						<< " (ID: " << new_user_id << ")" << std::endl;
+					return;
 				}
 				_sql_connector->FreeResult(result);
 			}
 		}
 	}
-	else {
-		auto responsePacket = _packet_manager->CreateAccountErrorResponse(ResultCode_FAIL, "°èÁ¤ »ı¼º ½ÇÆĞ", task.client_socket);
-		SendResponse(task, responsePacket);
-	}
+
+	auto responsePacket = _packet_manager->CreateAccountErrorResponse(
+		ResultCode_FAIL, "ì´ë¯¸ ì¡´ì¬í•˜ëŠ” ì‚¬ìš©ìëª…ì´ê±°ë‚˜ ê³„ì • ìƒì„±ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤", task.client_socket);
+	SendResponse(task, responsePacket);
+}
+
+void DatabaseThread::CreateDefaultPlayerData(uint32_t user_id)
+{
+	// ê¸°ë³¸ í”Œë ˆì´ì–´ ë°ì´í„° ìƒì„±
+	std::stringstream playerInsert;
+	playerInsert << "INSERT INTO player_data (user_id, level, exp, hp, mp, attack, defense, gold, map_id, pos_x, pos_y) "
+		<< "VALUES (" << user_id << ", 1, 0, 100, 50, 10, 5, 1000, 1, 0.0, 0.0)";
+	_sql_connector->ExecuteQuery(playerInsert.str());
+
+	// ê¸°ë³¸ ì•„ì´í…œ ì§€ê¸‰
+	std::stringstream itemInsert;
+	itemInsert << "INSERT INTO player_inventory (user_id, item_id, item_count, acquired_at) VALUES "
+		<< "(" << user_id << ", 1, 1, NOW()), "
+		<< "(" << user_id << ", 3, 1, NOW())";
+	_sql_connector->ExecuteQuery(itemInsert.str());
+
+	// ì‚¬ìš©ì ì„¸ì…˜ ì´ˆê¸° ìƒì„±
+	std::stringstream sessionInsert;
+	sessionInsert << "INSERT INTO user_sessions (user_id, is_online, login_time, last_activity, client_socket) "
+		<< "VALUES (" << user_id << ", FALSE, NOW(), NOW(), 0)";
+	_sql_connector->ExecuteQuery(sessionInsert.str());
 }
 
 void DatabaseThread::HandlePlayerDataRequest(const Task& task)
@@ -383,23 +475,14 @@ void DatabaseThread::HandlePlayerDataRequest(const Task& task)
 	const C2S_PlayerData* playerReq = _packet_manager->ParsePlayerDataRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!playerReq || !_packet_manager->ValidatePlayerDataRequest(playerReq)) {
-		std::cerr << "[DatabaseThread] ÇÃ·¹ÀÌ¾î µ¥ÀÌÅÍ ¿äÃ» °ËÁõ ½ÇÆĞ: " << _packet_manager->GetLastError() << std::endl;
 		SendErrorResponse(task, EventType_S2C_PlayerData, ResultCode_INVALID_USER);
 		return;
 	}
 
-	std::cout << "[DatabaseThread] ÇÃ·¹ÀÌ¾î µ¥ÀÌÅÍ ¿äÃ» Ã³¸® - »ç¿ëÀÚ ID: " << playerReq->user_id()
-		<< ", Å¸ÀÔ: " << playerReq->request_type() << std::endl;
-
-	if (!CheckDBConnection()) {
-		SendErrorResponse(task, EventType_S2C_PlayerData, ResultCode_FAIL);
-		return;
-	}
-
 	if (playerReq->request_type() == 0) {
-		// Á¶È¸
+		// ì¡°íšŒ
 		std::stringstream query;
-		query << "SELECT u.username, p.level, p.exp, p.hp, p.mp, p.attack, p.defense, p.gold, p.map_id, p.pos_x, p.pos_y "
+		query << "SELECT u.username, u.nickname, p.level, p.exp, p.hp, p.mp, p.attack, p.defense, p.gold, p.map_id, p.pos_x, p.pos_y "
 			<< "FROM users u JOIN player_data p ON u.user_id = p.user_id "
 			<< "WHERE u.user_id = " << playerReq->user_id() << " AND u.is_active = 1";
 
@@ -408,18 +491,13 @@ void DatabaseThread::HandlePlayerDataRequest(const Task& task)
 			if (result) {
 				auto responsePacket = _packet_manager->CreatePlayerDataResponseFromDB(result, playerReq->user_id(), task.client_socket);
 				SendResponse(task, responsePacket);
-				_sql_connector->FreeResult(result);
-			}
-			else {
-				SendErrorResponse(task, EventType_S2C_PlayerData, ResultCode_USER_NOT_FOUND);
+				return;
 			}
 		}
-		else {
-			SendErrorResponse(task, EventType_S2C_PlayerData, ResultCode_FAIL);
-		}
+		SendErrorResponse(task, EventType_S2C_PlayerData, ResultCode_USER_NOT_FOUND);
 	}
 	else if (playerReq->request_type() == 1) {
-		// ¾÷µ¥ÀÌÆ®
+		// ì—…ë°ì´íŠ¸
 		std::stringstream query;
 		query << "UPDATE player_data SET "
 			<< "level = " << playerReq->level() << ", "
@@ -432,12 +510,13 @@ void DatabaseThread::HandlePlayerDataRequest(const Task& task)
 			<< "WHERE user_id = " << playerReq->user_id();
 
 		if (_sql_connector->ExecuteQuery(query.str())) {
-			auto responsePacket = _packet_manager->CreatePlayerDataResponse(ResultCode_SUCCESS, playerReq->user_id(), "",
+			auto responsePacket = _packet_manager->CreatePlayerDataResponse(
+				ResultCode_SUCCESS, playerReq->user_id(), "", "",
 				playerReq->level(), playerReq->exp(), playerReq->hp(),
 				playerReq->mp(), 0, 0, 0, 0, playerReq->pos_x(),
 				playerReq->pos_y(), task.client_socket);
 			SendResponse(task, responsePacket);
-			std::cout << "[DatabaseThread] ÇÃ·¹ÀÌ¾î µ¥ÀÌÅÍ ¾÷µ¥ÀÌÆ® ¿Ï·á: »ç¿ëÀÚ ID " << playerReq->user_id() << std::endl;
+			std::cout << "[DatabaseThread] í”Œë ˆì´ì–´ ë°ì´í„° ì—…ë°ì´íŠ¸ ì™„ë£Œ: ì‚¬ìš©ì ID " << playerReq->user_id() << std::endl;
 		}
 		else {
 			SendErrorResponse(task, EventType_S2C_PlayerData, ResultCode_FAIL);
@@ -450,23 +529,15 @@ void DatabaseThread::HandleItemDataRequest(const Task& task)
 	const C2S_ItemData* itemReq = _packet_manager->ParseItemDataRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!itemReq || !_packet_manager->ValidateItemDataRequest(itemReq)) {
-		std::cerr << "[DatabaseThread] ¾ÆÀÌÅÛ µ¥ÀÌÅÍ ¿äÃ» °ËÁõ ½ÇÆĞ: " << _packet_manager->GetLastError() << std::endl;
 		SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_INVALID_USER);
 		return;
 	}
 
-	std::cout << "[DatabaseThread] ¾ÆÀÌÅÛ µ¥ÀÌÅÍ ¿äÃ» Ã³¸® - »ç¿ëÀÚ ID: " << itemReq->user_id()
-		<< ", Å¸ÀÔ: " << itemReq->request_type() << std::endl;
-
-	if (!CheckDBConnection()) {
-		SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_FAIL);
-		return;
-	}
-
 	if (itemReq->request_type() == 0) {
-		// ÀÎº¥Åä¸® Á¶È¸
+		// ì¸ë²¤í† ë¦¬ ì¡°íšŒ
 		std::stringstream query;
-		query << "SELECT i.item_id, m.item_name, i.item_count, m.item_type, p.gold "
+		query << "SELECT i.item_id, m.item_name, i.item_count, m.item_type, m.base_price, "
+			<< "m.attack_bonus, m.defense_bonus, m.hp_bonus, m.mp_bonus, m.description, p.gold "
 			<< "FROM player_inventory i "
 			<< "JOIN item_master m ON i.item_id = m.item_id "
 			<< "JOIN player_data p ON i.user_id = p.user_id "
@@ -478,53 +549,46 @@ void DatabaseThread::HandleItemDataRequest(const Task& task)
 			if (result) {
 				auto responsePacket = _packet_manager->CreateItemDataResponseFromDB(result, itemReq->user_id(), task.client_socket);
 				SendResponse(task, responsePacket);
-				_sql_connector->FreeResult(result);
-			}
-			else {
-				SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_USER_NOT_FOUND);
+				return;
 			}
 		}
-		else {
-			SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_FAIL);
-		}
+		// ì¸ë²¤í† ë¦¬ê°€ ë¹„ì–´ìˆëŠ” ê²½ìš°
+		auto responsePacket = _packet_manager->CreateItemDataResponse(ResultCode_SUCCESS, itemReq->user_id(), 0, task.client_socket);
+		SendResponse(task, responsePacket);
 	}
-	else if (itemReq->request_type() == 1) {
-		// ¾ÆÀÌÅÛ Ãß°¡
-		std::stringstream query;
-		query << "INSERT INTO player_inventory (user_id, item_id, item_count, created_at) VALUES ("
+	else {
+		// ì•„ì´í…œ ì¶”ê°€/ì œê±° ì²˜ë¦¬ëŠ” ê¸°ì¡´ê³¼ ë™ì¼í•˜ê²Œ ìœ ì§€
+		HandleItemModification(task, itemReq);
+	}
+}
+
+void DatabaseThread::HandleItemModification(const Task& task, const C2S_ItemData* itemReq)
+{
+	std::stringstream query;
+
+	if (itemReq->request_type() == 1) {
+		// ì•„ì´í…œ ì¶”ê°€
+		query << "INSERT INTO player_inventory (user_id, item_id, item_count, acquired_at) VALUES ("
 			<< itemReq->user_id() << ", " << itemReq->item_id() << ", "
 			<< itemReq->item_count() << ", NOW()) "
-			<< "ON DUPLICATE KEY UPDATE item_count = item_count + " << itemReq->item_count()
-			<< ", updated_at = NOW()";
-
-		if (_sql_connector->ExecuteQuery(query.str())) {
-			// ¾÷µ¥ÀÌÆ®µÈ ÀÎº¥Åä¸® ´Ù½Ã Á¶È¸ÇØ¼­ ÀÀ´ä
-			HandleItemDataRequest(task); // request_typeÀ» 0À¸·Î ¹Ù²ã¼­ Àç±Í È£ÃâÇÏ´Â °Íº¸´Ù´Â
-			std::cout << "[DatabaseThread] ¾ÆÀÌÅÛ Ãß°¡ ¿Ï·á: »ç¿ëÀÚ ID " << itemReq->user_id() << std::endl;
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_FAIL);
-		}
+			<< "ON DUPLICATE KEY UPDATE item_count = item_count + " << itemReq->item_count();
 	}
 	else if (itemReq->request_type() == 2) {
-		// ¾ÆÀÌÅÛ »èÁ¦
-		std::stringstream query;
-		query << "UPDATE player_inventory SET item_count = GREATEST(0, item_count - " << itemReq->item_count() << "), "
-			<< "updated_at = NOW() WHERE user_id = " << itemReq->user_id()
-			<< " AND item_id = " << itemReq->item_id();
+		// ì•„ì´í…œ ì œê±°
+		query << "UPDATE player_inventory SET item_count = GREATEST(0, item_count - " << itemReq->item_count() << ") "
+			<< "WHERE user_id = " << itemReq->user_id()
+			<< " AND item_id = " << itemReq->item_id()
+			<< "; DELETE FROM player_inventory WHERE user_id = " << itemReq->user_id()
+			<< " AND item_id = " << itemReq->item_id() << " AND item_count <= 0";
+	}
 
-		if (_sql_connector->ExecuteQuery(query.str())) {
-			// ¼ö·®ÀÌ 0ÀÌ µÈ ¾ÆÀÌÅÛÀº »èÁ¦
-			std::stringstream deleteQuery;
-			deleteQuery << "DELETE FROM player_inventory WHERE user_id = " << itemReq->user_id()
-				<< " AND item_id = " << itemReq->item_id() << " AND item_count <= 0";
-			_sql_connector->ExecuteQuery(deleteQuery.str());
-
-			std::cout << "[DatabaseThread] ¾ÆÀÌÅÛ »èÁ¦ ¿Ï·á: »ç¿ëÀÚ ID " << itemReq->user_id() << std::endl;
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_FAIL);
-		}
+	if (_sql_connector->ExecuteQuery(query.str())) {
+		auto responsePacket = _packet_manager->CreateItemDataResponse(ResultCode_SUCCESS, itemReq->user_id(), 0, task.client_socket);
+		SendResponse(task, responsePacket);
+		std::cout << "[DatabaseThread] ì•„ì´í…œ ìˆ˜ì • ì™„ë£Œ: ì‚¬ìš©ì ID " << itemReq->user_id() << std::endl;
+	}
+	else {
+		SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_FAIL);
 	}
 }
 
@@ -533,77 +597,24 @@ void DatabaseThread::HandleMonsterDataRequest(const Task& task)
 	const C2S_MonsterData* monsterReq = _packet_manager->ParseMonsterDataRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!monsterReq) {
-		std::cerr << "[DatabaseThread] ¸ó½ºÅÍ µ¥ÀÌÅÍ ¿äÃ» ÆÄ½Ì ½ÇÆĞ" << std::endl;
-		SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_FAIL);
-		return;
-	}
-
-	std::cout << "[DatabaseThread] ¸ó½ºÅÍ µ¥ÀÌÅÍ ¿äÃ» Ã³¸® - Å¸ÀÔ: " << monsterReq->request_type() << std::endl;
-
-	if (!CheckDBConnection()) {
 		SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_FAIL);
 		return;
 	}
 
 	if (monsterReq->request_type() == 0) {
-		// ¸ğµç ¸ó½ºÅÍ Á¶È¸
 		std::string query = "SELECT monster_id, monster_name, level, hp, attack, defense, exp_reward, gold_reward "
-			"FROM monster_master WHERE is_active = 1 ORDER BY level, monster_id";
+			"FROM monster_master ORDER BY level, monster_id";
 
 		if (_sql_connector->ExecuteQuery(query)) {
 			MYSQL_RES* result = _sql_connector->GetResult();
 			if (result) {
 				auto responsePacket = _packet_manager->CreateMonsterDataResponseFromDB(result, task.client_socket);
 				SendResponse(task, responsePacket);
-				_sql_connector->FreeResult(result);
+				return;
 			}
-			else {
-				SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_FAIL);
-			}
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_FAIL);
 		}
 	}
-	else if (monsterReq->request_type() == 1) {
-		// ¸ó½ºÅÍ Ãß°¡ (°ü¸®ÀÚ ±â´É)
-		if (monsterReq->monster_data()) {
-			const MonsterData* monster = monsterReq->monster_data();
-			std::stringstream insertQuery;
-			insertQuery << "INSERT INTO monster_master (monster_name, level, hp, attack, defense, exp_reward, gold_reward, created_at) VALUES ('"
-				<< monster->monster_name()->c_str() << "', "
-				<< monster->level() << ", " << monster->hp() << ", "
-				<< monster->attack() << ", " << monster->defense() << ", "
-				<< monster->exp_reward() << ", " << monster->gold_reward() << ", NOW())";
-
-			if (_sql_connector->ExecuteQuery(insertQuery.str())) {
-				auto responsePacket = _packet_manager->CreateMonsterDataResponse(ResultCode_SUCCESS, task.client_socket);
-				SendResponse(task, responsePacket);
-				std::cout << "[DatabaseThread] ¸ó½ºÅÍ Ãß°¡ ¿Ï·á: " << monster->monster_name()->c_str() << std::endl;
-			}
-			else {
-				SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_FAIL);
-			}
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_INVALID_USER);
-		}
-	}
-	else if (monsterReq->request_type() == 2) {
-		// ¸ó½ºÅÍ »èÁ¦ (°ü¸®ÀÚ ±â´É)
-		std::stringstream deleteQuery;
-		deleteQuery << "UPDATE monster_master SET is_active = 0, updated_at = NOW() WHERE monster_id = "
-			<< monsterReq->monster_id();
-
-		if (_sql_connector->ExecuteQuery(deleteQuery.str())) {
-			auto responsePacket = _packet_manager->CreateMonsterDataResponse(ResultCode_SUCCESS, task.client_socket);
-			SendResponse(task, responsePacket);
-			std::cout << "[DatabaseThread] ¸ó½ºÅÍ »èÁ¦ ¿Ï·á: ID " << monsterReq->monster_id() << std::endl;
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_FAIL);
-		}
-	}
+	SendErrorResponse(task, EventType_S2C_MonsterData, ResultCode_FAIL);
 }
 
 void DatabaseThread::HandlePlayerChatRequest(const Task& task)
@@ -611,22 +622,14 @@ void DatabaseThread::HandlePlayerChatRequest(const Task& task)
 	const C2S_PlayerChat* chatReq = _packet_manager->ParsePlayerChatRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!chatReq) {
-		std::cerr << "[DatabaseThread] Ã¤ÆÃ ¿äÃ» ÆÄ½Ì ½ÇÆĞ" << std::endl;
-		SendErrorResponse(task, EventType_S2C_PlayerChat, ResultCode_FAIL);
-		return;
-	}
-
-	std::cout << "[DatabaseThread] Ã¤ÆÃ ¿äÃ» Ã³¸® - Å¸ÀÔ: " << chatReq->request_type() << std::endl;
-
-	if (!CheckDBConnection()) {
 		SendErrorResponse(task, EventType_S2C_PlayerChat, ResultCode_FAIL);
 		return;
 	}
 
 	if (chatReq->request_type() == 0) {
-		// Ã¤ÆÃ ·Î±× Á¶È¸
+		// ì±„íŒ… ë¡œê·¸ ì¡°íšŒ
 		std::stringstream query;
-		query << "SELECT c.chat_id, c.sender_id, u.username, c.message, c.chat_type, UNIX_TIMESTAMP(c.timestamp) "
+		query << "SELECT c.chat_id, c.sender_id, u.nickname, c.message, c.chat_type, UNIX_TIMESTAMP(c.timestamp) "
 			<< "FROM chat_logs c "
 			<< "JOIN users u ON c.sender_id = u.user_id "
 			<< "WHERE c.chat_type = " << chatReq->chat_type();
@@ -643,18 +646,12 @@ void DatabaseThread::HandlePlayerChatRequest(const Task& task)
 			if (result) {
 				auto responsePacket = _packet_manager->CreatePlayerChatResponseFromDB(result, task.client_socket);
 				SendResponse(task, responsePacket);
-				_sql_connector->FreeResult(result);
+				return;
 			}
-			else {
-				SendErrorResponse(task, EventType_S2C_PlayerChat, ResultCode_FAIL);
-			}
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_PlayerChat, ResultCode_FAIL);
 		}
 	}
 	else if (chatReq->request_type() == 1) {
-		// Ã¤ÆÃ ¸Ş½ÃÁö ÀúÀå
+		// ì±„íŒ… ë©”ì‹œì§€ ì €ì¥
 		std::stringstream insertQuery;
 		insertQuery << "INSERT INTO chat_logs (sender_id, receiver_id, message, chat_type, timestamp) VALUES ("
 			<< chatReq->sender_id() << ", ";
@@ -666,9 +663,8 @@ void DatabaseThread::HandlePlayerChatRequest(const Task& task)
 			insertQuery << chatReq->receiver_id() << ", ";
 		}
 
-		// SQL ÀÎÁ§¼Ç ¹æÁö¸¦ À§ÇØ ¹®ÀÚ¿­ ÀÌ½ºÄÉÀÌÇÁ Ã³¸®
+		// ê°„ë‹¨í•œ ì´ìŠ¤ì¼€ì´í”„ ì²˜ë¦¬
 		std::string escaped_message = chatReq->message()->str();
-		// °£´ÜÇÑ ÀÌ½ºÄÉÀÌÇÁ Ã³¸® (½ÇÁ¦·Î´Â mysql_real_escape_string »ç¿ë ±ÇÀå)
 		size_t pos = 0;
 		while ((pos = escaped_message.find("'", pos)) != std::string::npos) {
 			escaped_message.replace(pos, 1, "\\'");
@@ -680,18 +676,232 @@ void DatabaseThread::HandlePlayerChatRequest(const Task& task)
 		if (_sql_connector->ExecuteQuery(insertQuery.str())) {
 			auto responsePacket = _packet_manager->CreatePlayerChatResponse(ResultCode_SUCCESS, task.client_socket);
 			SendResponse(task, responsePacket);
-			std::cout << "[DatabaseThread] Ã¤ÆÃ ¸Ş½ÃÁö ÀúÀå ¿Ï·á - ¹ß½ÅÀÚ: " << chatReq->sender_id() << std::endl;
-		}
-		else {
-			SendErrorResponse(task, EventType_S2C_PlayerChat, ResultCode_FAIL);
+			std::cout << "[DatabaseThread] ì±„íŒ… ë©”ì‹œì§€ ì €ì¥ ì™„ë£Œ - ë°œì‹ ì: " << chatReq->sender_id() << std::endl;
+			return;
 		}
 	}
+	SendErrorResponse(task, EventType_S2C_PlayerChat, ResultCode_FAIL);
+}
+
+void DatabaseThread::HandleShopListRequest(const Task& task)
+{
+	const C2S_ShopList* shopReq = _packet_manager->ParseShopListRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!shopReq || !_packet_manager->ValidateShopListRequest(shopReq)) {
+		SendErrorResponse(task, EventType_S2C_ShopList, ResultCode_FAIL);
+		return;
+	}
+
+	std::stringstream query;
+	query << "SELECT shop_id, shop_name, shop_type, map_id, pos_x, pos_y "
+		<< "FROM shop_master WHERE is_active = 1";
+
+	if (shopReq->map_id() != 0) {
+		query << " AND map_id = " << shopReq->map_id();
+	}
+
+	query << " ORDER BY shop_id";
+
+	if (_sql_connector->ExecuteQuery(query.str())) {
+		MYSQL_RES* result = _sql_connector->GetResult();
+		if (result) {
+			auto responsePacket = _packet_manager->CreateShopListResponseFromDB(result, task.client_socket);
+			SendResponse(task, responsePacket);
+			return;
+		}
+	}
+	SendErrorResponse(task, EventType_S2C_ShopList, ResultCode_SHOP_NOT_FOUND);
+}
+
+void DatabaseThread::HandleShopItemsRequest(const Task& task)
+{
+	const C2S_ShopItems* shopItemsReq = _packet_manager->ParseShopItemsRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!shopItemsReq || !_packet_manager->ValidateShopItemsRequest(shopItemsReq)) {
+		SendErrorResponse(task, EventType_S2C_ShopItems, ResultCode_FAIL);
+		return;
+	}
+
+	std::stringstream query;
+	query << "SELECT i.item_id, i.item_name, i.item_type, i.base_price, "
+		<< "i.attack_bonus, i.defense_bonus, i.hp_bonus, i.mp_bonus, i.description "
+		<< "FROM shop_items s "
+		<< "JOIN item_master i ON s.item_id = i.item_id "
+		<< "WHERE s.shop_id = " << shopItemsReq->shop_id()
+		<< " ORDER BY i.item_id";
+
+	if (_sql_connector->ExecuteQuery(query.str())) {
+		MYSQL_RES* result = _sql_connector->GetResult();
+		if (result) {
+			auto responsePacket = _packet_manager->CreateShopItemsResponseFromDB(result, shopItemsReq->shop_id(), task.client_socket);
+			SendResponse(task, responsePacket);
+			return;
+		}
+	}
+	SendErrorResponse(task, EventType_S2C_ShopItems, ResultCode_ITEM_NOT_FOUND);
+}
+
+void DatabaseThread::HandleShopTransactionRequest(const Task& task)
+{
+	const C2S_ShopTransaction* transReq = _packet_manager->ParseShopTransactionRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!transReq || !_packet_manager->ValidateShopTransactionRequest(transReq)) {
+		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
+		return;
+	}
+
+	if (transReq->transaction_type() == 0) {
+		HandleShopPurchase(task, transReq);
+	}
+	else if (transReq->transaction_type() == 1) {
+		HandleShopSell(task, transReq);
+	}
+}
+
+void DatabaseThread::HandleShopPurchase(const Task& task, const C2S_ShopTransaction* transReq)
+{
+	// ì•„ì´í…œ ê°€ê²©ê³¼ í”Œë ˆì´ì–´ ê³¨ë“œë¥¼ í•œ ë²ˆì— ì¡°íšŒ
+	std::stringstream query;
+	query << "SELECT i.base_price, p.gold FROM item_master i, player_data p "
+		<< "WHERE i.item_id = " << transReq->item_id()
+		<< " AND p.user_id = " << transReq->user_id();
+
+	if (!_sql_connector->ExecuteQuery(query.str())) {
+		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
+		return;
+	}
+
+	MYSQL_RES* result = _sql_connector->GetResult();
+	if (!result) {
+		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_ITEM_NOT_FOUND);
+		return;
+	}
+
+	MYSQL_ROW row = mysql_fetch_row(result);
+	if (!row) {
+		_sql_connector->FreeResult(result);
+		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_ITEM_NOT_FOUND);
+		return;
+	}
+
+	uint32_t item_price = std::stoul(row[0]);
+	uint32_t current_gold = std::stoul(row[1]);
+	uint32_t total_price = item_price * transReq->item_count();
+
+	_sql_connector->FreeResult(result);
+
+	if (current_gold < total_price) {
+		auto responsePacket = _packet_manager->CreateShopTransactionErrorResponse(
+			ResultCode_INSUFFICIENT_GOLD, "ê³¨ë“œê°€ ë¶€ì¡±í•©ë‹ˆë‹¤", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	// íŠ¸ëœì­ì…˜ìœ¼ë¡œ ê³¨ë“œ ì°¨ê°ê³¼ ì•„ì´í…œ ì¶”ê°€ë¥¼ í•œ ë²ˆì— ì²˜ë¦¬
+	std::stringstream transactionQuery;
+	transactionQuery << "START TRANSACTION; "
+		<< "UPDATE player_data SET gold = gold - " << total_price << " WHERE user_id = " << transReq->user_id() << "; "
+		<< "INSERT INTO player_inventory (user_id, item_id, item_count, acquired_at) VALUES ("
+		<< transReq->user_id() << ", " << transReq->item_id() << ", "
+		<< transReq->item_count() << ", NOW()) "
+		<< "ON DUPLICATE KEY UPDATE item_count = item_count + " << transReq->item_count() << "; "
+		<< "COMMIT;";
+
+	if (_sql_connector->ExecuteQuery(transactionQuery.str())) {
+		uint32_t new_gold = current_gold - total_price;
+		auto responsePacket = _packet_manager->CreateShopTransactionResponse(
+			ResultCode_SUCCESS, "êµ¬ë§¤ ì™„ë£Œ", new_gold, task.client_socket);
+		SendResponse(task, responsePacket);
+		std::cout << "[DatabaseThread] ì•„ì´í…œ êµ¬ë§¤ ì™„ë£Œ: ì‚¬ìš©ì ID " << transReq->user_id() << std::endl;
+	}
+	else {
+		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
+	}
+}
+
+void DatabaseThread::HandleShopSell(const Task& task, const C2S_ShopTransaction* transReq)
+{
+	// í”Œë ˆì´ì–´ê°€ ë³´ìœ í•œ ì•„ì´í…œ ìˆ˜ëŸ‰ê³¼ ì•„ì´í…œ ê°€ê²©ì„ í•œ ë²ˆì— ì¡°íšŒ
+	std::stringstream query;
+	query << "SELECT i.item_count, m.base_price FROM player_inventory i "
+		<< "JOIN item_master m ON i.item_id = m.item_id "
+		<< "WHERE i.user_id = " << transReq->user_id()
+		<< " AND i.item_id = " << transReq->item_id();
+
+	if (!_sql_connector->ExecuteQuery(query.str())) {
+		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
+		return;
+	}
+
+	MYSQL_RES* result = _sql_connector->GetResult();
+	if (!result) {
+		auto responsePacket = _packet_manager->CreateShopTransactionErrorResponse(
+			ResultCode_ITEM_NOT_FOUND, "ì•„ì´í…œì„ ë³´ìœ í•˜ê³  ìˆì§€ ì•ŠìŠµë‹ˆë‹¤", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	MYSQL_ROW row = mysql_fetch_row(result);
+	if (!row) {
+		_sql_connector->FreeResult(result);
+		auto responsePacket = _packet_manager->CreateShopTransactionErrorResponse(
+			ResultCode_ITEM_NOT_FOUND, "ì•„ì´í…œì„ ë³´ìœ í•˜ê³  ìˆì§€ ì•ŠìŠµë‹ˆë‹¤", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	uint32_t owned_count = std::stoul(row[0]);
+	uint32_t item_price = std::stoul(row[1]);
+	uint32_t sell_price = (item_price / 2) * transReq->item_count();
+
+	_sql_connector->FreeResult(result);
+
+	if (owned_count < transReq->item_count()) {
+		auto responsePacket = _packet_manager->CreateShopTransactionErrorResponse(
+			ResultCode_ITEM_NOT_FOUND, "ë³´ìœ  ì•„ì´í…œì´ ë¶€ì¡±í•©ë‹ˆë‹¤", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	// íŠ¸ëœì­ì…˜ìœ¼ë¡œ ì•„ì´í…œ ì œê±°ì™€ ê³¨ë“œ ì¶”ê°€ë¥¼ í•œ ë²ˆì— ì²˜ë¦¬
+	std::stringstream transactionQuery;
+	transactionQuery << "START TRANSACTION; "
+		<< "UPDATE player_inventory SET item_count = item_count - " << transReq->item_count()
+		<< " WHERE user_id = " << transReq->user_id() << " AND item_id = " << transReq->item_id() << "; "
+		<< "DELETE FROM player_inventory WHERE user_id = " << transReq->user_id()
+		<< " AND item_id = " << transReq->item_id() << " AND item_count <= 0; "
+		<< "UPDATE player_data SET gold = gold + " << sell_price
+		<< " WHERE user_id = " << transReq->user_id() << "; "
+		<< "COMMIT;";
+
+	if (_sql_connector->ExecuteQuery(transactionQuery.str())) {
+		// í˜„ì¬ ê³¨ë“œ ì¡°íšŒ
+		std::string goldQuery = "SELECT gold FROM player_data WHERE user_id = " + std::to_string(transReq->user_id());
+		if (_sql_connector->ExecuteQuery(goldQuery)) {
+			MYSQL_RES* goldResult = _sql_connector->GetResult();
+			if (goldResult) {
+				MYSQL_ROW goldRow = mysql_fetch_row(goldResult);
+				if (goldRow) {
+					uint32_t current_gold = std::stoul(goldRow[0]);
+					_sql_connector->FreeResult(goldResult);
+
+					auto responsePacket = _packet_manager->CreateShopTransactionResponse(
+						ResultCode_SUCCESS, "íŒë§¤ ì™„ë£Œ", current_gold, task.client_socket);
+					SendResponse(task, responsePacket);
+					std::cout << "[DatabaseThread] ì•„ì´í…œ íŒë§¤ ì™„ë£Œ: ì‚¬ìš©ì ID " << transReq->user_id() << std::endl;
+					return;
+				}
+				_sql_connector->FreeResult(goldResult);
+			}
+		}
+	}
+	SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
 }
 
 void DatabaseThread::SendResponse(const Task& task, const std::vector<uint8_t>& responsePacket)
 {
 	if (responsePacket.empty()) {
-		std::cerr << "[DatabaseThread] ºó ÀÀ´ä ÆĞÅ¶" << std::endl;
+		std::cerr << "[DatabaseThread] ë¹ˆ ì‘ë‹µ íŒ¨í‚·" << std::endl;
 		return;
 	}
 
@@ -702,11 +912,9 @@ void DatabaseThread::SendResponse(const Task& task, const std::vector<uint8_t>& 
 	response.success = true;
 	response.response_data = responsePacket;
 
-	// ÀÀ´ä Å¥¿¡ Ãß°¡
 	SendQueue->enqueue(response);
-	std::cout << "[DatabaseThread] ÀÀ´ä Àü¼Û ¿Ï·á - Å¬¶óÀÌ¾ğÆ®: " << task.client_socket
-		<< ", ÆĞÅ¶ Å©±â: " << responsePacket.size() << " bytes" << std::endl;
-
+	std::cout << "[DatabaseThread] ì‘ë‹µ ì „ì†¡ ì™„ë£Œ - í´ë¼ì´ì–¸íŠ¸: " << task.client_socket
+		<< ", íŒ¨í‚· í¬ê¸°: " << responsePacket.size() << " bytes" << std::endl;
 }
 
 void DatabaseThread::SendErrorResponse(const Task& task, EventType responseType, ResultCode errorCode)
@@ -722,7 +930,42 @@ void DatabaseThread::SendErrorResponse(const Task& task, EventType responseType,
 	response.response_data = errorPacket;
 
 	SendQueue->enqueue(response);
-	std::cout << "[DatabaseThread] ¿¡·¯ ÀÀ´ä Àü¼Û - Å¬¶óÀÌ¾ğÆ®: " << task.client_socket
-		<< ", ¿¡·¯ ÄÚµå: " << _packet_manager->GetResultCodeName(errorCode) << std::endl;
+	std::cout << "[DatabaseThread] ì—ëŸ¬ ì‘ë‹µ ì „ì†¡ - í´ë¼ì´ì–¸íŠ¸: " << task.client_socket
+		<< ", ì—ëŸ¬ ì½”ë“œ: " << _packet_manager->GetResultCodeName(errorCode) << std::endl;
+}
 
+void DatabaseThread::ShowSessionDebugInfo()
+{
+	if (!CheckDBConnection()) return;
+
+	try {
+		std::string query = R"(
+			SELECT s.user_id, u.username, s.is_online, s.login_time, s.last_activity 
+			FROM user_sessions s 
+			JOIN users u ON s.user_id = u.user_id 
+			ORDER BY s.last_activity DESC 
+			LIMIT 10
+		)";
+
+		if (_sql_connector->ExecuteQuery(query)) {
+			MYSQL_RES* result = _sql_connector->GetResult();
+			if (result) {
+				std::cout << "\n[DEBUG] ìµœê·¼ ì„¸ì…˜ ìƒíƒœ (ìµœëŒ€ 10ê°œ):" << std::endl;
+				std::cout << "UserID | Username | Online | LoginTime | LastActivity" << std::endl;
+				std::cout << "-------|----------|--------|-----------|-------------" << std::endl;
+
+				MYSQL_ROW row;
+				while ((row = mysql_fetch_row(result))) {
+					std::cout << row[0] << " | " << row[1] << " | "
+						<< (std::string(row[2]) == "1" ? "Y" : "N") << " | "
+						<< (row[3] ? row[3] : "NULL") << " | "
+						<< (row[4] ? row[4] : "NULL") << std::endl;
+				}
+				_sql_connector->FreeResult(result);
+			}
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] ShowSessionDebugInfo ì˜ˆì™¸: " << e.what() << std::endl;
+	}
 }

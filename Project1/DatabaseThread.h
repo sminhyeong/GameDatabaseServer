@@ -1,19 +1,15 @@
-#pragma once
+ï»¿#pragma once
 
-// ±âº» C++ Çì´õµé¸¸
-#include <iostream>
-#pragma once
-
-// ±âº» C++ Çì´õµé
-#include <iostream>
+// ê¸°ë³¸ C++ í—¤ë”ë“¤
 #include <memory>
 #include <thread>
 #include <atomic>
 #include <vector>
 #include <string>
 #include <chrono>
+#include <iostream>
 
-// Àü¹æ ¼±¾ğÀ¸·Î Çì´õ Ãæµ¹ ¹æÁö
+// ì „ë°© ì„ ì–¸ìœ¼ë¡œ í—¤ë” ì¤‘ë³µ ë°©ì§€
 template<typename T>
 class LockFreeQueue;
 
@@ -22,7 +18,11 @@ struct DBResponse;
 class MySqlConnector;
 class ServerPacketManager;
 
-// ÇÊ¿äÇÑ enumµé¸¸ Àü¹æ ¼±¾ğ
+// í•„ìš”í•œ êµ¬ì¡°ì²´ë“¤ ì „ë°© ì„ ì–¸
+struct C2S_ItemData;
+struct C2S_ShopTransaction;
+
+// í•„ìš”í•œ enumë“¤ë§Œ ì „ë°© ì„ ì–¸
 enum EventType : uint8_t;
 enum ResultCode : int8_t;
 
@@ -32,25 +32,25 @@ private:
     std::atomic<bool> _is_running;
     std::thread _db_thread;
 
-    // Å¥ Æ÷ÀÎÅÍµé
+    // í í¬ì¸í„°ë“¤
     LockFreeQueue<Task>* RecvQueue;
     LockFreeQueue<DBResponse>* SendQueue;
 
-    // ÁÖ¿ä ÄÄÆ÷³ÍÆ®µé
+    // ì£¼ìš” ì»´í¬ë„ŒíŠ¸ë“¤
     std::unique_ptr<MySqlConnector> _sql_connector;
     std::unique_ptr<ServerPacketManager> _packet_manager;
 
-    // ¿¬°á Á¤º¸ ÀúÀå
+    // ì—°ê²° ì •ë³´ ì €ì¥
     int _port;
     std::string _host;
     std::string _user;
     std::string _password;
     std::string _database;
 
-    // ½º·¹µå ½ÇÇà ÇÔ¼ö
+    // ìŠ¤ë ˆë“œ ì‹¤í–‰ í•¨ìˆ˜
     void Run();
 
-    // ÅÂ½ºÅ© Ã³¸® ÇÔ¼öµé
+    // íƒœìŠ¤í¬ ì²˜ë¦¬ í•¨ìˆ˜ë“¤
     void ProcessTask(const Task& task);
     void HandleLoginRequest(const Task& task);
     void HandleLogoutRequest(const Task& task);
@@ -59,30 +59,48 @@ private:
     void HandleItemDataRequest(const Task& task);
     void HandleMonsterDataRequest(const Task& task);
     void HandlePlayerChatRequest(const Task& task);
+    void HandleShopListRequest(const Task& task);
+    void HandleShopItemsRequest(const Task& task);
+    void HandleShopTransactionRequest(const Task& task);
 
-    // ÀÀ´ä Àü¼Û ÇïÆÛ ÇÔ¼öµé
+    // ì„¸ë¶„í™”ëœ ì²˜ë¦¬ í•¨ìˆ˜ë“¤
+    void CreateDefaultPlayerData(uint32_t user_id);
+    void HandleItemModification(const Task& task, const C2S_ItemData* itemReq);
+    void HandleShopPurchase(const Task& task, const C2S_ShopTransaction* transReq);
+    void HandleShopSell(const Task& task, const C2S_ShopTransaction* transReq);
+
+    // ì‘ë‹µ ì „ì†¡ í—¬í¼ í•¨ìˆ˜ë“¤
     void SendResponse(const Task& task, const std::vector<uint8_t>& responsePacket);
     void SendErrorResponse(const Task& task, EventType responseType, ResultCode errorCode);
 
-    // DB ¿¬°á »óÅÂ Ã¼Å©
+    // DB ì—°ê²° ìƒíƒœ ì²´í¬
     bool CheckDBConnection();
     bool ReconnectIfNeeded();
+
+    // ê°„ì†Œí™”ëœ ì„¸ì…˜ ê´€ë¦¬ í•¨ìˆ˜ë“¤
+    bool InitializeUserSessions();              // ì„œë²„ ì‹œì‘ ì‹œ ì„¸ì…˜ ì´ˆê¸°í™”
+    bool SetUserOnlineStatus(uint32_t user_id, bool is_online);  // ì˜¨ë¼ì¸ ìƒíƒœ ì„¤ì •
 
 public:
     DatabaseThread(LockFreeQueue<Task>* RecvQueue, LockFreeQueue<DBResponse>* SendQueue);
     ~DatabaseThread();
 
-    // DB ¼³Á¤ ÇÔ¼öµé
+    // DB ì„¤ì • í•¨ìˆ˜ë“¤
     void SetConnectionInfo(const std::string& host, const std::string& user,
         const std::string& password, const std::string& database, int port = 3306);
 
     bool ConnectDB();
     void Stop();
 
-    // »óÅÂ È®ÀÎ ÇÔ¼öµé
+    // ìƒíƒœ í™•ì¸ í•¨ìˆ˜ë“¤
     bool IsRunning() const { return _is_running.load(); }
     bool IsDBConnected() const;
 
-    // Åë°è Á¤º¸
+    // ë””ë²„ê·¸ ì •ë³´
     std::string GetStatus() const;
+
+    // ê³µê°œ ì‚¬ìš©ì ê´€ë¦¬ í•¨ìˆ˜ë“¤
+    void DisconnectAllUsers();                  // ëª¨ë“  ì‚¬ìš©ì ì˜¤í”„ë¼ì¸ ì²˜ë¦¬ (ì„œë²„ ì¢…ë£Œ ì‹œ)
+    void DisconnectUser(uint32_t user_id);      // íŠ¹ì • ì‚¬ìš©ì ì—°ê²° í•´ì œ
+    void ShowSessionDebugInfo();                // ì„¸ì…˜ ë””ë²„ê·¸ ì •ë³´ ì¶œë ¥
 };

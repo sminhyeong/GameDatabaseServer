@@ -57,4 +57,5 @@ public:
     void Thread_ClearDeadWorkerLoop();
 
     bool IsRunning() const { return _is_running.load(); }
+    void DisconnectAllUsers();
 };

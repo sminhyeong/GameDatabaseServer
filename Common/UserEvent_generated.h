@@ -40,6 +40,27 @@ struct S2C_ItemDataBuilder;
 struct C2S_ItemData;
 struct C2S_ItemDataBuilder;
 
+struct ShopData;
+struct ShopDataBuilder;
+
+struct S2C_ShopList;
+struct S2C_ShopListBuilder;
+
+struct C2S_ShopList;
+struct C2S_ShopListBuilder;
+
+struct S2C_ShopItems;
+struct S2C_ShopItemsBuilder;
+
+struct C2S_ShopItems;
+struct C2S_ShopItemsBuilder;
+
+struct S2C_ShopTransaction;
+struct S2C_ShopTransactionBuilder;
+
+struct C2S_ShopTransaction;
+struct C2S_ShopTransactionBuilder;
+
 struct S2C_PlayerData;
 struct S2C_PlayerDataBuilder;
 
@@ -72,33 +93,42 @@ enum ResultCode : int8_t {
   ResultCode_FAIL = 1,
   ResultCode_INVALID_USER = 2,
   ResultCode_USER_NOT_FOUND = 3,
+  ResultCode_INSUFFICIENT_GOLD = 4,
+  ResultCode_ITEM_NOT_FOUND = 5,
+  ResultCode_SHOP_NOT_FOUND = 6,
   ResultCode_MIN = ResultCode_SUCCESS,
-  ResultCode_MAX = ResultCode_USER_NOT_FOUND
+  ResultCode_MAX = ResultCode_SHOP_NOT_FOUND
 };
 
-inline const ResultCode (&EnumValuesResultCode())[4] {
+inline const ResultCode (&EnumValuesResultCode())[7] {
   static const ResultCode values[] = {
     ResultCode_SUCCESS,
     ResultCode_FAIL,
     ResultCode_INVALID_USER,
-    ResultCode_USER_NOT_FOUND
+    ResultCode_USER_NOT_FOUND,
+    ResultCode_INSUFFICIENT_GOLD,
+    ResultCode_ITEM_NOT_FOUND,
+    ResultCode_SHOP_NOT_FOUND
   };
   return values;
 }
 
 inline const char * const *EnumNamesResultCode() {
-  static const char * const names[5] = {
+  static const char * const names[8] = {
     "SUCCESS",
     "FAIL",
     "INVALID_USER",
     "USER_NOT_FOUND",
+    "INSUFFICIENT_GOLD",
+    "ITEM_NOT_FOUND",
+    "SHOP_NOT_FOUND",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameResultCode(ResultCode e) {
-  if (::flatbuffers::IsOutRange(e, ResultCode_SUCCESS, ResultCode_USER_NOT_FOUND)) return "";
+  if (::flatbuffers::IsOutRange(e, ResultCode_SUCCESS, ResultCode_SHOP_NOT_FOUND)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesResultCode()[index];
 }
@@ -113,17 +143,23 @@ enum EventType : uint8_t {
   EventType_C2S_CreateAccount = 6,
   EventType_S2C_ItemData = 7,
   EventType_C2S_ItemData = 8,
-  EventType_S2C_PlayerData = 9,
-  EventType_C2S_PlayerData = 10,
-  EventType_S2C_MonsterData = 11,
-  EventType_C2S_MonsterData = 12,
-  EventType_S2C_PlayerChat = 13,
-  EventType_C2S_PlayerChat = 14,
+  EventType_S2C_ShopList = 9,
+  EventType_C2S_ShopList = 10,
+  EventType_S2C_ShopItems = 11,
+  EventType_C2S_ShopItems = 12,
+  EventType_S2C_ShopTransaction = 13,
+  EventType_C2S_ShopTransaction = 14,
+  EventType_S2C_PlayerData = 15,
+  EventType_C2S_PlayerData = 16,
+  EventType_S2C_MonsterData = 17,
+  EventType_C2S_MonsterData = 18,
+  EventType_S2C_PlayerChat = 19,
+  EventType_C2S_PlayerChat = 20,
   EventType_MIN = EventType_NONE,
   EventType_MAX = EventType_C2S_PlayerChat
 };
 
-inline const EventType (&EnumValuesEventType())[15] {
+inline const EventType (&EnumValuesEventType())[21] {
   static const EventType values[] = {
     EventType_NONE,
     EventType_S2C_Login,
@@ -134,6 +170,12 @@ inline const EventType (&EnumValuesEventType())[15] {
     EventType_C2S_CreateAccount,
     EventType_S2C_ItemData,
     EventType_C2S_ItemData,
+    EventType_S2C_ShopList,
+    EventType_C2S_ShopList,
+    EventType_S2C_ShopItems,
+    EventType_C2S_ShopItems,
+    EventType_S2C_ShopTransaction,
+    EventType_C2S_ShopTransaction,
     EventType_S2C_PlayerData,
     EventType_C2S_PlayerData,
     EventType_S2C_MonsterData,
@@ -145,7 +187,7 @@ inline const EventType (&EnumValuesEventType())[15] {
 }
 
 inline const char * const *EnumNamesEventType() {
-  static const char * const names[16] = {
+  static const char * const names[22] = {
     "NONE",
     "S2C_Login",
     "C2S_Login",
@@ -155,6 +197,12 @@ inline const char * const *EnumNamesEventType() {
     "C2S_CreateAccount",
     "S2C_ItemData",
     "C2S_ItemData",
+    "S2C_ShopList",
+    "C2S_ShopList",
+    "S2C_ShopItems",
+    "C2S_ShopItems",
+    "S2C_ShopTransaction",
+    "C2S_ShopTransaction",
     "S2C_PlayerData",
     "C2S_PlayerData",
     "S2C_MonsterData",
@@ -208,6 +256,30 @@ template<> struct EventTypeTraits<C2S_ItemData> {
   static const EventType enum_value = EventType_C2S_ItemData;
 };
 
+template<> struct EventTypeTraits<S2C_ShopList> {
+  static const EventType enum_value = EventType_S2C_ShopList;
+};
+
+template<> struct EventTypeTraits<C2S_ShopList> {
+  static const EventType enum_value = EventType_C2S_ShopList;
+};
+
+template<> struct EventTypeTraits<S2C_ShopItems> {
+  static const EventType enum_value = EventType_S2C_ShopItems;
+};
+
+template<> struct EventTypeTraits<C2S_ShopItems> {
+  static const EventType enum_value = EventType_C2S_ShopItems;
+};
+
+template<> struct EventTypeTraits<S2C_ShopTransaction> {
+  static const EventType enum_value = EventType_S2C_ShopTransaction;
+};
+
+template<> struct EventTypeTraits<C2S_ShopTransaction> {
+  static const EventType enum_value = EventType_C2S_ShopTransaction;
+};
+
 template<> struct EventTypeTraits<S2C_PlayerData> {
   static const EventType enum_value = EventType_S2C_PlayerData;
 };
@@ -241,7 +313,8 @@ struct S2C_Login FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_RESULT = 4,
     VT_USER_ID = 6,
     VT_USERNAME = 8,
-    VT_LEVEL = 10
+    VT_NICKNAME = 10,
+    VT_LEVEL = 12
   };
   ResultCode result() const {
     return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
@@ -252,6 +325,9 @@ struct S2C_Login FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const ::flatbuffers::String *username() const {
     return GetPointer<const ::flatbuffers::String *>(VT_USERNAME);
   }
+  const ::flatbuffers::String *nickname() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_NICKNAME);
+  }
   uint32_t level() const {
     return GetField<uint32_t>(VT_LEVEL, 0);
   }
@@ -261,6 +337,8 @@ struct S2C_Login FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint32_t>(verifier, VT_USER_ID, 4) &&
            VerifyOffset(verifier, VT_USERNAME) &&
            verifier.VerifyString(username()) &&
+           VerifyOffset(verifier, VT_NICKNAME) &&
+           verifier.VerifyString(nickname()) &&
            VerifyField<uint32_t>(verifier, VT_LEVEL, 4) &&
            verifier.EndTable();
   }
@@ -278,6 +356,9 @@ struct S2C_LoginBuilder {
   }
   void add_username(::flatbuffers::Offset<::flatbuffers::String> username) {
     fbb_.AddOffset(S2C_Login::VT_USERNAME, username);
+  }
+  void add_nickname(::flatbuffers::Offset<::flatbuffers::String> nickname) {
+    fbb_.AddOffset(S2C_Login::VT_NICKNAME, nickname);
   }
   void add_level(uint32_t level) {
     fbb_.AddElement<uint32_t>(S2C_Login::VT_LEVEL, level, 0);
@@ -298,9 +379,11 @@ inline ::flatbuffers::Offset<S2C_Login> CreateS2C_Login(
     ResultCode result = ResultCode_SUCCESS,
     uint32_t user_id = 0,
     ::flatbuffers::Offset<::flatbuffers::String> username = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
     uint32_t level = 0) {
   S2C_LoginBuilder builder_(_fbb);
   builder_.add_level(level);
+  builder_.add_nickname(nickname);
   builder_.add_username(username);
   builder_.add_user_id(user_id);
   builder_.add_result(result);
@@ -312,13 +395,16 @@ inline ::flatbuffers::Offset<S2C_Login> CreateS2C_LoginDirect(
     ResultCode result = ResultCode_SUCCESS,
     uint32_t user_id = 0,
     const char *username = nullptr,
+    const char *nickname = nullptr,
     uint32_t level = 0) {
   auto username__ = username ? _fbb.CreateString(username) : 0;
+  auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return CreateS2C_Login(
       _fbb,
       result,
       user_id,
       username__,
+      nickname__,
       level);
 }
 
@@ -651,7 +737,13 @@ struct ItemData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ITEM_ID = 4,
     VT_ITEM_NAME = 6,
     VT_ITEM_COUNT = 8,
-    VT_ITEM_TYPE = 10
+    VT_ITEM_TYPE = 10,
+    VT_BASE_PRICE = 12,
+    VT_ATTACK_BONUS = 14,
+    VT_DEFENSE_BONUS = 16,
+    VT_HP_BONUS = 18,
+    VT_MP_BONUS = 20,
+    VT_DESCRIPTION = 22
   };
   uint32_t item_id() const {
     return GetField<uint32_t>(VT_ITEM_ID, 0);
@@ -665,6 +757,24 @@ struct ItemData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint32_t item_type() const {
     return GetField<uint32_t>(VT_ITEM_TYPE, 0);
   }
+  uint32_t base_price() const {
+    return GetField<uint32_t>(VT_BASE_PRICE, 0);
+  }
+  uint32_t attack_bonus() const {
+    return GetField<uint32_t>(VT_ATTACK_BONUS, 0);
+  }
+  uint32_t defense_bonus() const {
+    return GetField<uint32_t>(VT_DEFENSE_BONUS, 0);
+  }
+  uint32_t hp_bonus() const {
+    return GetField<uint32_t>(VT_HP_BONUS, 0);
+  }
+  uint32_t mp_bonus() const {
+    return GetField<uint32_t>(VT_MP_BONUS, 0);
+  }
+  const ::flatbuffers::String *description() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_DESCRIPTION);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint32_t>(verifier, VT_ITEM_ID, 4) &&
@@ -672,6 +782,13 @@ struct ItemData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyString(item_name()) &&
            VerifyField<uint32_t>(verifier, VT_ITEM_COUNT, 4) &&
            VerifyField<uint32_t>(verifier, VT_ITEM_TYPE, 4) &&
+           VerifyField<uint32_t>(verifier, VT_BASE_PRICE, 4) &&
+           VerifyField<uint32_t>(verifier, VT_ATTACK_BONUS, 4) &&
+           VerifyField<uint32_t>(verifier, VT_DEFENSE_BONUS, 4) &&
+           VerifyField<uint32_t>(verifier, VT_HP_BONUS, 4) &&
+           VerifyField<uint32_t>(verifier, VT_MP_BONUS, 4) &&
+           VerifyOffset(verifier, VT_DESCRIPTION) &&
+           verifier.VerifyString(description()) &&
            verifier.EndTable();
   }
 };
@@ -692,6 +809,24 @@ struct ItemDataBuilder {
   void add_item_type(uint32_t item_type) {
     fbb_.AddElement<uint32_t>(ItemData::VT_ITEM_TYPE, item_type, 0);
   }
+  void add_base_price(uint32_t base_price) {
+    fbb_.AddElement<uint32_t>(ItemData::VT_BASE_PRICE, base_price, 0);
+  }
+  void add_attack_bonus(uint32_t attack_bonus) {
+    fbb_.AddElement<uint32_t>(ItemData::VT_ATTACK_BONUS, attack_bonus, 0);
+  }
+  void add_defense_bonus(uint32_t defense_bonus) {
+    fbb_.AddElement<uint32_t>(ItemData::VT_DEFENSE_BONUS, defense_bonus, 0);
+  }
+  void add_hp_bonus(uint32_t hp_bonus) {
+    fbb_.AddElement<uint32_t>(ItemData::VT_HP_BONUS, hp_bonus, 0);
+  }
+  void add_mp_bonus(uint32_t mp_bonus) {
+    fbb_.AddElement<uint32_t>(ItemData::VT_MP_BONUS, mp_bonus, 0);
+  }
+  void add_description(::flatbuffers::Offset<::flatbuffers::String> description) {
+    fbb_.AddOffset(ItemData::VT_DESCRIPTION, description);
+  }
   explicit ItemDataBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -708,8 +843,20 @@ inline ::flatbuffers::Offset<ItemData> CreateItemData(
     uint32_t item_id = 0,
     ::flatbuffers::Offset<::flatbuffers::String> item_name = 0,
     uint32_t item_count = 0,
-    uint32_t item_type = 0) {
+    uint32_t item_type = 0,
+    uint32_t base_price = 0,
+    uint32_t attack_bonus = 0,
+    uint32_t defense_bonus = 0,
+    uint32_t hp_bonus = 0,
+    uint32_t mp_bonus = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> description = 0) {
   ItemDataBuilder builder_(_fbb);
+  builder_.add_description(description);
+  builder_.add_mp_bonus(mp_bonus);
+  builder_.add_hp_bonus(hp_bonus);
+  builder_.add_defense_bonus(defense_bonus);
+  builder_.add_attack_bonus(attack_bonus);
+  builder_.add_base_price(base_price);
   builder_.add_item_type(item_type);
   builder_.add_item_count(item_count);
   builder_.add_item_name(item_name);
@@ -722,14 +869,27 @@ inline ::flatbuffers::Offset<ItemData> CreateItemDataDirect(
     uint32_t item_id = 0,
     const char *item_name = nullptr,
     uint32_t item_count = 0,
-    uint32_t item_type = 0) {
+    uint32_t item_type = 0,
+    uint32_t base_price = 0,
+    uint32_t attack_bonus = 0,
+    uint32_t defense_bonus = 0,
+    uint32_t hp_bonus = 0,
+    uint32_t mp_bonus = 0,
+    const char *description = nullptr) {
   auto item_name__ = item_name ? _fbb.CreateString(item_name) : 0;
+  auto description__ = description ? _fbb.CreateString(description) : 0;
   return CreateItemData(
       _fbb,
       item_id,
       item_name__,
       item_count,
-      item_type);
+      item_type,
+      base_price,
+      attack_bonus,
+      defense_bonus,
+      hp_bonus,
+      mp_bonus,
+      description__);
 }
 
 struct S2C_ItemData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -891,22 +1051,522 @@ inline ::flatbuffers::Offset<C2S_ItemData> CreateC2S_ItemData(
   return builder_.Finish();
 }
 
+struct ShopData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ShopDataBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOP_ID = 4,
+    VT_SHOP_NAME = 6,
+    VT_SHOP_TYPE = 8,
+    VT_MAP_ID = 10,
+    VT_POS_X = 12,
+    VT_POS_Y = 14
+  };
+  uint32_t shop_id() const {
+    return GetField<uint32_t>(VT_SHOP_ID, 0);
+  }
+  const ::flatbuffers::String *shop_name() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SHOP_NAME);
+  }
+  uint32_t shop_type() const {
+    return GetField<uint32_t>(VT_SHOP_TYPE, 0);
+  }
+  uint32_t map_id() const {
+    return GetField<uint32_t>(VT_MAP_ID, 0);
+  }
+  float pos_x() const {
+    return GetField<float>(VT_POS_X, 0.0f);
+  }
+  float pos_y() const {
+    return GetField<float>(VT_POS_Y, 0.0f);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_SHOP_ID, 4) &&
+           VerifyOffset(verifier, VT_SHOP_NAME) &&
+           verifier.VerifyString(shop_name()) &&
+           VerifyField<uint32_t>(verifier, VT_SHOP_TYPE, 4) &&
+           VerifyField<uint32_t>(verifier, VT_MAP_ID, 4) &&
+           VerifyField<float>(verifier, VT_POS_X, 4) &&
+           VerifyField<float>(verifier, VT_POS_Y, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct ShopDataBuilder {
+  typedef ShopData Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shop_id(uint32_t shop_id) {
+    fbb_.AddElement<uint32_t>(ShopData::VT_SHOP_ID, shop_id, 0);
+  }
+  void add_shop_name(::flatbuffers::Offset<::flatbuffers::String> shop_name) {
+    fbb_.AddOffset(ShopData::VT_SHOP_NAME, shop_name);
+  }
+  void add_shop_type(uint32_t shop_type) {
+    fbb_.AddElement<uint32_t>(ShopData::VT_SHOP_TYPE, shop_type, 0);
+  }
+  void add_map_id(uint32_t map_id) {
+    fbb_.AddElement<uint32_t>(ShopData::VT_MAP_ID, map_id, 0);
+  }
+  void add_pos_x(float pos_x) {
+    fbb_.AddElement<float>(ShopData::VT_POS_X, pos_x, 0.0f);
+  }
+  void add_pos_y(float pos_y) {
+    fbb_.AddElement<float>(ShopData::VT_POS_Y, pos_y, 0.0f);
+  }
+  explicit ShopDataBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ShopData> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ShopData>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ShopData> CreateShopData(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t shop_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> shop_name = 0,
+    uint32_t shop_type = 0,
+    uint32_t map_id = 0,
+    float pos_x = 0.0f,
+    float pos_y = 0.0f) {
+  ShopDataBuilder builder_(_fbb);
+  builder_.add_pos_y(pos_y);
+  builder_.add_pos_x(pos_x);
+  builder_.add_map_id(map_id);
+  builder_.add_shop_type(shop_type);
+  builder_.add_shop_name(shop_name);
+  builder_.add_shop_id(shop_id);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<ShopData> CreateShopDataDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t shop_id = 0,
+    const char *shop_name = nullptr,
+    uint32_t shop_type = 0,
+    uint32_t map_id = 0,
+    float pos_x = 0.0f,
+    float pos_y = 0.0f) {
+  auto shop_name__ = shop_name ? _fbb.CreateString(shop_name) : 0;
+  return CreateShopData(
+      _fbb,
+      shop_id,
+      shop_name__,
+      shop_type,
+      map_id,
+      pos_x,
+      pos_y);
+}
+
+struct S2C_ShopList FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_ShopListBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_SHOPS = 6
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  const ::flatbuffers::Vector<::flatbuffers::Offset<ShopData>> *shops() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<ShopData>> *>(VT_SHOPS);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyOffset(verifier, VT_SHOPS) &&
+           verifier.VerifyVector(shops()) &&
+           verifier.VerifyVectorOfTables(shops()) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_ShopListBuilder {
+  typedef S2C_ShopList Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_ShopList::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_shops(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<ShopData>>> shops) {
+    fbb_.AddOffset(S2C_ShopList::VT_SHOPS, shops);
+  }
+  explicit S2C_ShopListBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_ShopList> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_ShopList>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_ShopList> CreateS2C_ShopList(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<ShopData>>> shops = 0) {
+  S2C_ShopListBuilder builder_(_fbb);
+  builder_.add_shops(shops);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_ShopList> CreateS2C_ShopListDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    const std::vector<::flatbuffers::Offset<ShopData>> *shops = nullptr) {
+  auto shops__ = shops ? _fbb.CreateVector<::flatbuffers::Offset<ShopData>>(*shops) : 0;
+  return CreateS2C_ShopList(
+      _fbb,
+      result,
+      shops__);
+}
+
+struct C2S_ShopList FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_ShopListBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_REQUEST_TYPE = 4,
+    VT_MAP_ID = 6
+  };
+  uint32_t request_type() const {
+    return GetField<uint32_t>(VT_REQUEST_TYPE, 0);
+  }
+  uint32_t map_id() const {
+    return GetField<uint32_t>(VT_MAP_ID, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_REQUEST_TYPE, 4) &&
+           VerifyField<uint32_t>(verifier, VT_MAP_ID, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_ShopListBuilder {
+  typedef C2S_ShopList Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_request_type(uint32_t request_type) {
+    fbb_.AddElement<uint32_t>(C2S_ShopList::VT_REQUEST_TYPE, request_type, 0);
+  }
+  void add_map_id(uint32_t map_id) {
+    fbb_.AddElement<uint32_t>(C2S_ShopList::VT_MAP_ID, map_id, 0);
+  }
+  explicit C2S_ShopListBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_ShopList> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_ShopList>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_ShopList> CreateC2S_ShopList(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t request_type = 0,
+    uint32_t map_id = 0) {
+  C2S_ShopListBuilder builder_(_fbb);
+  builder_.add_map_id(map_id);
+  builder_.add_request_type(request_type);
+  return builder_.Finish();
+}
+
+struct S2C_ShopItems FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_ShopItemsBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_SHOP_ID = 6,
+    VT_ITEMS = 8
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  uint32_t shop_id() const {
+    return GetField<uint32_t>(VT_SHOP_ID, 0);
+  }
+  const ::flatbuffers::Vector<::flatbuffers::Offset<ItemData>> *items() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<ItemData>> *>(VT_ITEMS);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyField<uint32_t>(verifier, VT_SHOP_ID, 4) &&
+           VerifyOffset(verifier, VT_ITEMS) &&
+           verifier.VerifyVector(items()) &&
+           verifier.VerifyVectorOfTables(items()) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_ShopItemsBuilder {
+  typedef S2C_ShopItems Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_ShopItems::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_shop_id(uint32_t shop_id) {
+    fbb_.AddElement<uint32_t>(S2C_ShopItems::VT_SHOP_ID, shop_id, 0);
+  }
+  void add_items(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<ItemData>>> items) {
+    fbb_.AddOffset(S2C_ShopItems::VT_ITEMS, items);
+  }
+  explicit S2C_ShopItemsBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_ShopItems> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_ShopItems>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_ShopItems> CreateS2C_ShopItems(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    uint32_t shop_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<ItemData>>> items = 0) {
+  S2C_ShopItemsBuilder builder_(_fbb);
+  builder_.add_items(items);
+  builder_.add_shop_id(shop_id);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_ShopItems> CreateS2C_ShopItemsDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    uint32_t shop_id = 0,
+    const std::vector<::flatbuffers::Offset<ItemData>> *items = nullptr) {
+  auto items__ = items ? _fbb.CreateVector<::flatbuffers::Offset<ItemData>>(*items) : 0;
+  return CreateS2C_ShopItems(
+      _fbb,
+      result,
+      shop_id,
+      items__);
+}
+
+struct C2S_ShopItems FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_ShopItemsBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHOP_ID = 4
+  };
+  uint32_t shop_id() const {
+    return GetField<uint32_t>(VT_SHOP_ID, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_SHOP_ID, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_ShopItemsBuilder {
+  typedef C2S_ShopItems Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shop_id(uint32_t shop_id) {
+    fbb_.AddElement<uint32_t>(C2S_ShopItems::VT_SHOP_ID, shop_id, 0);
+  }
+  explicit C2S_ShopItemsBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_ShopItems> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_ShopItems>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_ShopItems> CreateC2S_ShopItems(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t shop_id = 0) {
+  C2S_ShopItemsBuilder builder_(_fbb);
+  builder_.add_shop_id(shop_id);
+  return builder_.Finish();
+}
+
+struct S2C_ShopTransaction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_ShopTransactionBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_MESSAGE = 6,
+    VT_UPDATED_GOLD = 8
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  uint32_t updated_gold() const {
+    return GetField<uint32_t>(VT_UPDATED_GOLD, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           VerifyField<uint32_t>(verifier, VT_UPDATED_GOLD, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_ShopTransactionBuilder {
+  typedef S2C_ShopTransaction Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_ShopTransaction::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(S2C_ShopTransaction::VT_MESSAGE, message);
+  }
+  void add_updated_gold(uint32_t updated_gold) {
+    fbb_.AddElement<uint32_t>(S2C_ShopTransaction::VT_UPDATED_GOLD, updated_gold, 0);
+  }
+  explicit S2C_ShopTransactionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_ShopTransaction> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_ShopTransaction>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_ShopTransaction> CreateS2C_ShopTransaction(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0,
+    uint32_t updated_gold = 0) {
+  S2C_ShopTransactionBuilder builder_(_fbb);
+  builder_.add_updated_gold(updated_gold);
+  builder_.add_message(message);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_ShopTransaction> CreateS2C_ShopTransactionDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    const char *message = nullptr,
+    uint32_t updated_gold = 0) {
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return CreateS2C_ShopTransaction(
+      _fbb,
+      result,
+      message__,
+      updated_gold);
+}
+
+struct C2S_ShopTransaction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_ShopTransactionBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_USER_ID = 4,
+    VT_SHOP_ID = 6,
+    VT_ITEM_ID = 8,
+    VT_ITEM_COUNT = 10,
+    VT_TRANSACTION_TYPE = 12
+  };
+  uint32_t user_id() const {
+    return GetField<uint32_t>(VT_USER_ID, 0);
+  }
+  uint32_t shop_id() const {
+    return GetField<uint32_t>(VT_SHOP_ID, 0);
+  }
+  uint32_t item_id() const {
+    return GetField<uint32_t>(VT_ITEM_ID, 0);
+  }
+  uint32_t item_count() const {
+    return GetField<uint32_t>(VT_ITEM_COUNT, 0);
+  }
+  uint32_t transaction_type() const {
+    return GetField<uint32_t>(VT_TRANSACTION_TYPE, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_USER_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_SHOP_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_ITEM_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_ITEM_COUNT, 4) &&
+           VerifyField<uint32_t>(verifier, VT_TRANSACTION_TYPE, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_ShopTransactionBuilder {
+  typedef C2S_ShopTransaction Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_user_id(uint32_t user_id) {
+    fbb_.AddElement<uint32_t>(C2S_ShopTransaction::VT_USER_ID, user_id, 0);
+  }
+  void add_shop_id(uint32_t shop_id) {
+    fbb_.AddElement<uint32_t>(C2S_ShopTransaction::VT_SHOP_ID, shop_id, 0);
+  }
+  void add_item_id(uint32_t item_id) {
+    fbb_.AddElement<uint32_t>(C2S_ShopTransaction::VT_ITEM_ID, item_id, 0);
+  }
+  void add_item_count(uint32_t item_count) {
+    fbb_.AddElement<uint32_t>(C2S_ShopTransaction::VT_ITEM_COUNT, item_count, 0);
+  }
+  void add_transaction_type(uint32_t transaction_type) {
+    fbb_.AddElement<uint32_t>(C2S_ShopTransaction::VT_TRANSACTION_TYPE, transaction_type, 0);
+  }
+  explicit C2S_ShopTransactionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_ShopTransaction> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_ShopTransaction>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_ShopTransaction> CreateC2S_ShopTransaction(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t user_id = 0,
+    uint32_t shop_id = 0,
+    uint32_t item_id = 0,
+    uint32_t item_count = 0,
+    uint32_t transaction_type = 0) {
+  C2S_ShopTransactionBuilder builder_(_fbb);
+  builder_.add_transaction_type(transaction_type);
+  builder_.add_item_count(item_count);
+  builder_.add_item_id(item_id);
+  builder_.add_shop_id(shop_id);
+  builder_.add_user_id(user_id);
+  return builder_.Finish();
+}
+
 struct S2C_PlayerData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef S2C_PlayerDataBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_RESULT = 4,
     VT_USER_ID = 6,
     VT_USERNAME = 8,
-    VT_LEVEL = 10,
-    VT_EXP = 12,
-    VT_HP = 14,
-    VT_MP = 16,
-    VT_ATTACK = 18,
-    VT_DEFENSE = 20,
-    VT_GOLD = 22,
-    VT_MAP_ID = 24,
-    VT_POS_X = 26,
-    VT_POS_Y = 28
+    VT_NICKNAME = 10,
+    VT_LEVEL = 12,
+    VT_EXP = 14,
+    VT_HP = 16,
+    VT_MP = 18,
+    VT_ATTACK = 20,
+    VT_DEFENSE = 22,
+    VT_GOLD = 24,
+    VT_MAP_ID = 26,
+    VT_POS_X = 28,
+    VT_POS_Y = 30
   };
   ResultCode result() const {
     return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
@@ -916,6 +1576,9 @@ struct S2C_PlayerData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const ::flatbuffers::String *username() const {
     return GetPointer<const ::flatbuffers::String *>(VT_USERNAME);
+  }
+  const ::flatbuffers::String *nickname() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_NICKNAME);
   }
   uint32_t level() const {
     return GetField<uint32_t>(VT_LEVEL, 0);
@@ -953,6 +1616,8 @@ struct S2C_PlayerData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint32_t>(verifier, VT_USER_ID, 4) &&
            VerifyOffset(verifier, VT_USERNAME) &&
            verifier.VerifyString(username()) &&
+           VerifyOffset(verifier, VT_NICKNAME) &&
+           verifier.VerifyString(nickname()) &&
            VerifyField<uint32_t>(verifier, VT_LEVEL, 4) &&
            VerifyField<uint32_t>(verifier, VT_EXP, 4) &&
            VerifyField<uint32_t>(verifier, VT_HP, 4) &&
@@ -979,6 +1644,9 @@ struct S2C_PlayerDataBuilder {
   }
   void add_username(::flatbuffers::Offset<::flatbuffers::String> username) {
     fbb_.AddOffset(S2C_PlayerData::VT_USERNAME, username);
+  }
+  void add_nickname(::flatbuffers::Offset<::flatbuffers::String> nickname) {
+    fbb_.AddOffset(S2C_PlayerData::VT_NICKNAME, nickname);
   }
   void add_level(uint32_t level) {
     fbb_.AddElement<uint32_t>(S2C_PlayerData::VT_LEVEL, level, 0);
@@ -1026,6 +1694,7 @@ inline ::flatbuffers::Offset<S2C_PlayerData> CreateS2C_PlayerData(
     ResultCode result = ResultCode_SUCCESS,
     uint32_t user_id = 0,
     ::flatbuffers::Offset<::flatbuffers::String> username = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
     uint32_t level = 0,
     uint32_t exp = 0,
     uint32_t hp = 0,
@@ -1047,6 +1716,7 @@ inline ::flatbuffers::Offset<S2C_PlayerData> CreateS2C_PlayerData(
   builder_.add_hp(hp);
   builder_.add_exp(exp);
   builder_.add_level(level);
+  builder_.add_nickname(nickname);
   builder_.add_username(username);
   builder_.add_user_id(user_id);
   builder_.add_result(result);
@@ -1058,6 +1728,7 @@ inline ::flatbuffers::Offset<S2C_PlayerData> CreateS2C_PlayerDataDirect(
     ResultCode result = ResultCode_SUCCESS,
     uint32_t user_id = 0,
     const char *username = nullptr,
+    const char *nickname = nullptr,
     uint32_t level = 0,
     uint32_t exp = 0,
     uint32_t hp = 0,
@@ -1069,11 +1740,13 @@ inline ::flatbuffers::Offset<S2C_PlayerData> CreateS2C_PlayerDataDirect(
     float pos_x = 0.0f,
     float pos_y = 0.0f) {
   auto username__ = username ? _fbb.CreateString(username) : 0;
+  auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return CreateS2C_PlayerData(
       _fbb,
       result,
       user_id,
       username__,
+      nickname__,
       level,
       exp,
       hp,
@@ -1772,6 +2445,24 @@ struct DatabasePacket FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const C2S_ItemData *packet_event_as_C2S_ItemData() const {
     return packet_event_type() == EventType_C2S_ItemData ? static_cast<const C2S_ItemData *>(packet_event()) : nullptr;
   }
+  const S2C_ShopList *packet_event_as_S2C_ShopList() const {
+    return packet_event_type() == EventType_S2C_ShopList ? static_cast<const S2C_ShopList *>(packet_event()) : nullptr;
+  }
+  const C2S_ShopList *packet_event_as_C2S_ShopList() const {
+    return packet_event_type() == EventType_C2S_ShopList ? static_cast<const C2S_ShopList *>(packet_event()) : nullptr;
+  }
+  const S2C_ShopItems *packet_event_as_S2C_ShopItems() const {
+    return packet_event_type() == EventType_S2C_ShopItems ? static_cast<const S2C_ShopItems *>(packet_event()) : nullptr;
+  }
+  const C2S_ShopItems *packet_event_as_C2S_ShopItems() const {
+    return packet_event_type() == EventType_C2S_ShopItems ? static_cast<const C2S_ShopItems *>(packet_event()) : nullptr;
+  }
+  const S2C_ShopTransaction *packet_event_as_S2C_ShopTransaction() const {
+    return packet_event_type() == EventType_S2C_ShopTransaction ? static_cast<const S2C_ShopTransaction *>(packet_event()) : nullptr;
+  }
+  const C2S_ShopTransaction *packet_event_as_C2S_ShopTransaction() const {
+    return packet_event_type() == EventType_C2S_ShopTransaction ? static_cast<const C2S_ShopTransaction *>(packet_event()) : nullptr;
+  }
   const S2C_PlayerData *packet_event_as_S2C_PlayerData() const {
     return packet_event_type() == EventType_S2C_PlayerData ? static_cast<const S2C_PlayerData *>(packet_event()) : nullptr;
   }
@@ -1833,6 +2524,30 @@ template<> inline const S2C_ItemData *DatabasePacket::packet_event_as<S2C_ItemDa
 
 template<> inline const C2S_ItemData *DatabasePacket::packet_event_as<C2S_ItemData>() const {
   return packet_event_as_C2S_ItemData();
+}
+
+template<> inline const S2C_ShopList *DatabasePacket::packet_event_as<S2C_ShopList>() const {
+  return packet_event_as_S2C_ShopList();
+}
+
+template<> inline const C2S_ShopList *DatabasePacket::packet_event_as<C2S_ShopList>() const {
+  return packet_event_as_C2S_ShopList();
+}
+
+template<> inline const S2C_ShopItems *DatabasePacket::packet_event_as<S2C_ShopItems>() const {
+  return packet_event_as_S2C_ShopItems();
+}
+
+template<> inline const C2S_ShopItems *DatabasePacket::packet_event_as<C2S_ShopItems>() const {
+  return packet_event_as_C2S_ShopItems();
+}
+
+template<> inline const S2C_ShopTransaction *DatabasePacket::packet_event_as<S2C_ShopTransaction>() const {
+  return packet_event_as_S2C_ShopTransaction();
+}
+
+template<> inline const C2S_ShopTransaction *DatabasePacket::packet_event_as<C2S_ShopTransaction>() const {
+  return packet_event_as_C2S_ShopTransaction();
 }
 
 template<> inline const S2C_PlayerData *DatabasePacket::packet_event_as<S2C_PlayerData>() const {
@@ -1930,6 +2645,30 @@ inline bool VerifyEventType(::flatbuffers::Verifier &verifier, const void *obj, 
     }
     case EventType_C2S_ItemData: {
       auto ptr = reinterpret_cast<const C2S_ItemData *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_S2C_ShopList: {
+      auto ptr = reinterpret_cast<const S2C_ShopList *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_ShopList: {
+      auto ptr = reinterpret_cast<const C2S_ShopList *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_S2C_ShopItems: {
+      auto ptr = reinterpret_cast<const S2C_ShopItems *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_ShopItems: {
+      auto ptr = reinterpret_cast<const C2S_ShopItems *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_S2C_ShopTransaction: {
+      auto ptr = reinterpret_cast<const S2C_ShopTransaction *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_ShopTransaction: {
+      auto ptr = reinterpret_cast<const C2S_ShopTransaction *>(obj);
       return verifier.VerifyTable(ptr);
     }
     case EventType_S2C_PlayerData: {

@@ -149,16 +149,62 @@ const C2S_PlayerChat* ServerPacketManager::ParsePlayerChatRequest(const uint8_t*
     return packet->packet_event_as_C2S_PlayerChat();
 }
 
+const C2S_ShopList* ServerPacketManager::ParseShopListRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_ShopList) {
+        SetError("Invalid shop list request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_ShopList();
+}
+
+const C2S_ShopItems* ServerPacketManager::ParseShopItemsRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_ShopItems) {
+        SetError("Invalid shop items request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_ShopItems();
+}
+
+const C2S_ShopTransaction* ServerPacketManager::ParseShopTransactionRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_ShopTransaction) {
+        SetError("Invalid shop transaction request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_ShopTransaction();
+}
+
 // === 서버 응답 패킷 생성 (S2C) ===
 
-std::vector<uint8_t> ServerPacketManager::CreateLoginResponse(ResultCode result, uint32_t user_id, const std::string& username, uint32_t level, uint32_t client_socket)
+std::vector<uint8_t> ServerPacketManager::CreateLoginResponse(ResultCode result, uint32_t user_id, const std::string& username, const std::string& nickname, uint32_t level, uint32_t client_socket)
 {
     ClearError();
     try {
         flatbuffers::FlatBufferBuilder builder;
 
         auto usernameOffset = builder.CreateString(username);
-        auto loginResponse = CreateS2C_Login(builder, result, user_id, usernameOffset, level);
+        auto nicknameOffset = builder.CreateString(nickname);
+        auto loginResponse = CreateS2C_Login(builder, result, user_id, usernameOffset, nicknameOffset, level);
         auto packet = CreateDatabasePacket(builder, EventType_S2C_Login, loginResponse.Union(), client_socket);
 
         builder.Finish(packet);
@@ -246,7 +292,7 @@ std::vector<uint8_t> ServerPacketManager::CreateItemDataResponse(ResultCode resu
     }
 }
 
-std::vector<uint8_t> ServerPacketManager::CreatePlayerDataResponse(ResultCode result, uint32_t user_id, const std::string& username,
+std::vector<uint8_t> ServerPacketManager::CreatePlayerDataResponse(ResultCode result, uint32_t user_id, const std::string& username, const std::string& nickname,
     uint32_t level, uint32_t exp, uint32_t hp, uint32_t mp, uint32_t attack,
     uint32_t defense, uint32_t gold, uint32_t map_id, float pos_x, float pos_y, uint32_t client_socket)
 {
@@ -255,7 +301,8 @@ std::vector<uint8_t> ServerPacketManager::CreatePlayerDataResponse(ResultCode re
         flatbuffers::FlatBufferBuilder builder;
 
         auto usernameOffset = builder.CreateString(username);
-        auto playerResponse = CreateS2C_PlayerData(builder, result, user_id, usernameOffset, level, exp, hp, mp, attack, defense, gold, map_id, pos_x, pos_y);
+        auto nicknameOffset = builder.CreateString(nickname);
+        auto playerResponse = CreateS2C_PlayerData(builder, result, user_id, usernameOffset, nicknameOffset, level, exp, hp, mp, attack, defense, gold, map_id, pos_x, pos_y);
         auto packet = CreateDatabasePacket(builder, EventType_S2C_PlayerData, playerResponse.Union(), client_socket);
 
         builder.Finish(packet);
@@ -323,6 +370,81 @@ std::vector<uint8_t> ServerPacketManager::CreatePlayerChatResponse(ResultCode re
     }
 }
 
+std::vector<uint8_t> ServerPacketManager::CreateShopListResponse(ResultCode result, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        // 빈 상점 벡터로 기본 응답 생성
+        std::vector<flatbuffers::Offset<ShopData>> shops;
+        auto shopsVector = builder.CreateVector(shops);
+
+        auto shopResponse = CreateS2C_ShopList(builder, result, shopsVector);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_ShopList, shopResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopListResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateShopItemsResponse(ResultCode result, uint32_t shop_id, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        // 빈 아이템 벡터로 기본 응답 생성
+        std::vector<flatbuffers::Offset<ItemData>> items;
+        auto itemsVector = builder.CreateVector(items);
+
+        auto shopItemsResponse = CreateS2C_ShopItems(builder, result, shop_id, itemsVector);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_ShopItems, shopItemsResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopItemsResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateShopTransactionResponse(ResultCode result, const std::string& message, uint32_t updated_gold, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto messageOffset = builder.CreateString(message);
+        auto transactionResponse = CreateS2C_ShopTransaction(builder, result, messageOffset, updated_gold);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_ShopTransaction, transactionResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopTransactionResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
 // === MySQL 결과에서 직접 응답 패킷 생성 (서버 전용) ===
 
 std::vector<uint8_t> ServerPacketManager::CreateLoginResponseFromDB(MYSQL_RES* result, const std::string& username, uint32_t client_socket)
@@ -338,9 +460,10 @@ std::vector<uint8_t> ServerPacketManager::CreateLoginResponseFromDB(MYSQL_RES* r
 
     try {
         uint32_t user_id = GetUintFromRow(row, 0);
-        uint32_t level = GetUintFromRow(row, 1);
+        std::string nickname = GetStringFromRow(row, 1);  // nickname 추가
+        uint32_t level = GetUintFromRow(row, 2);
 
-        return CreateLoginResponse(ResultCode_SUCCESS, user_id, username, level, client_socket);
+        return CreateLoginResponse(ResultCode_SUCCESS, user_id, username, nickname, level, client_socket);
     }
     catch (const std::exception& e) {
         SetError("CreateLoginResponseFromDB failed: " + std::string(e.what()));
@@ -361,18 +484,19 @@ std::vector<uint8_t> ServerPacketManager::CreatePlayerDataResponseFromDB(MYSQL_R
 
     try {
         std::string username = GetStringFromRow(row, 0);
-        uint32_t level = GetUintFromRow(row, 1);
-        uint32_t exp = GetUintFromRow(row, 2);
-        uint32_t hp = GetUintFromRow(row, 3);
-        uint32_t mp = GetUintFromRow(row, 4);
-        uint32_t attack = GetUintFromRow(row, 5);
-        uint32_t defense = GetUintFromRow(row, 6);
-        uint32_t gold = GetUintFromRow(row, 7);
-        uint32_t map_id = GetUintFromRow(row, 8);
-        float pos_x = GetFloatFromRow(row, 9);
-        float pos_y = GetFloatFromRow(row, 10);
+        std::string nickname = GetStringFromRow(row, 1);  // nickname 추가
+        uint32_t level = GetUintFromRow(row, 2);
+        uint32_t exp = GetUintFromRow(row, 3);
+        uint32_t hp = GetUintFromRow(row, 4);
+        uint32_t mp = GetUintFromRow(row, 5);
+        uint32_t attack = GetUintFromRow(row, 6);
+        uint32_t defense = GetUintFromRow(row, 7);
+        uint32_t gold = GetUintFromRow(row, 8);
+        uint32_t map_id = GetUintFromRow(row, 9);
+        float pos_x = GetFloatFromRow(row, 10);
+        float pos_y = GetFloatFromRow(row, 11);
 
-        return CreatePlayerDataResponse(ResultCode_SUCCESS, user_id, username, level, exp, hp, mp,
+        return CreatePlayerDataResponse(ResultCode_SUCCESS, user_id, username, nickname, level, exp, hp, mp,
             attack, defense, gold, map_id, pos_x, pos_y, client_socket);
     }
     catch (const std::exception& e) {
@@ -401,13 +525,21 @@ std::vector<uint8_t> ServerPacketManager::CreateItemDataResponseFromDB(MYSQL_RES
             std::string item_name = GetStringFromRow(row, 1);
             uint32_t item_count = GetUintFromRow(row, 2);
             uint32_t item_type = GetUintFromRow(row, 3);
+            uint32_t base_price = GetUintFromRow(row, 4);
+            uint32_t attack_bonus = GetUintFromRow(row, 5);
+            uint32_t defense_bonus = GetUintFromRow(row, 6);
+            uint32_t hp_bonus = GetUintFromRow(row, 7);
+            uint32_t mp_bonus = GetUintFromRow(row, 8);
+            std::string description = GetStringFromRow(row, 9);
 
             auto itemNameOffset = builder.CreateString(item_name);
-            auto itemData = CreateItemData(builder, item_id, itemNameOffset, item_count, item_type);
+            auto descriptionOffset = builder.CreateString(description);
+            auto itemData = CreateItemData(builder, item_id, itemNameOffset, item_count, item_type,
+                base_price, attack_bonus, defense_bonus, hp_bonus, mp_bonus, descriptionOffset);
             items.push_back(itemData);
 
             if (first_row) {
-                gold = GetUintFromRow(row, 4); // gold는 첫 번째 행에서만 가져오기
+                gold = GetUintFromRow(row, 10); // gold는 첫 번째 행에서만 가져오기
                 first_row = false;
             }
         }
@@ -518,11 +650,102 @@ std::vector<uint8_t> ServerPacketManager::CreatePlayerChatResponseFromDB(MYSQL_R
     }
 }
 
+std::vector<uint8_t> ServerPacketManager::CreateShopListResponseFromDB(MYSQL_RES* result, uint32_t client_socket)
+{
+    if (!IsValidMySQLResult(result)) {
+        return CreateShopListResponse(ResultCode_FAIL, client_socket);
+    }
+
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        std::vector<flatbuffers::Offset<ShopData>> shops;
+
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(result))) {
+            uint32_t shop_id = GetUintFromRow(row, 0);
+            std::string shop_name = GetStringFromRow(row, 1);
+            uint32_t shop_type = GetUintFromRow(row, 2);
+            uint32_t map_id = GetUintFromRow(row, 3);
+            float pos_x = GetFloatFromRow(row, 4);
+            float pos_y = GetFloatFromRow(row, 5);
+
+            auto shopNameOffset = builder.CreateString(shop_name);
+            auto shopData = CreateShopData(builder, shop_id, shopNameOffset, shop_type, map_id, pos_x, pos_y);
+            shops.push_back(shopData);
+        }
+
+        auto shopsVector = builder.CreateVector(shops);
+        auto shopResponse = CreateS2C_ShopList(builder, ResultCode_SUCCESS, shopsVector);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_ShopList, shopResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopListResponseFromDB failed: " + std::string(e.what()));
+        return CreateShopListResponse(ResultCode_FAIL, client_socket);
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateShopItemsResponseFromDB(MYSQL_RES* result, uint32_t shop_id, uint32_t client_socket)
+{
+    if (!IsValidMySQLResult(result)) {
+        return CreateShopItemsResponse(ResultCode_FAIL, shop_id, client_socket);
+    }
+
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        std::vector<flatbuffers::Offset<ItemData>> items;
+
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(result))) {
+            uint32_t item_id = GetUintFromRow(row, 0);
+            std::string item_name = GetStringFromRow(row, 1);
+            uint32_t item_type = GetUintFromRow(row, 2);
+            uint32_t base_price = GetUintFromRow(row, 3);
+            uint32_t attack_bonus = GetUintFromRow(row, 4);
+            uint32_t defense_bonus = GetUintFromRow(row, 5);
+            uint32_t hp_bonus = GetUintFromRow(row, 6);
+            uint32_t mp_bonus = GetUintFromRow(row, 7);
+            std::string description = GetStringFromRow(row, 8);
+
+            auto itemNameOffset = builder.CreateString(item_name);
+            auto descriptionOffset = builder.CreateString(description);
+            auto itemData = CreateItemData(builder, item_id, itemNameOffset, 1, item_type, // 상점에서는 수량 1로 설정
+                base_price, attack_bonus, defense_bonus, hp_bonus, mp_bonus, descriptionOffset);
+            items.push_back(itemData);
+        }
+
+        auto itemsVector = builder.CreateVector(items);
+        auto shopItemsResponse = CreateS2C_ShopItems(builder, ResultCode_SUCCESS, shop_id, itemsVector);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_ShopItems, shopItemsResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopItemsResponseFromDB failed: " + std::string(e.what()));
+        return CreateShopItemsResponse(ResultCode_FAIL, shop_id, client_socket);
+    }
+}
+
 // === 간편한 에러 응답 생성 ===
 
 std::vector<uint8_t> ServerPacketManager::CreateLoginErrorResponse(ResultCode error_code, uint32_t client_socket)
 {
-    return CreateLoginResponse(error_code, 0, "", 0, client_socket);
+    return CreateLoginResponse(error_code, 0, "", "", 0, client_socket);
 }
 
 std::vector<uint8_t> ServerPacketManager::CreateAccountErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket)
@@ -532,12 +755,27 @@ std::vector<uint8_t> ServerPacketManager::CreateAccountErrorResponse(ResultCode 
 
 std::vector<uint8_t> ServerPacketManager::CreatePlayerDataErrorResponse(ResultCode error_code, uint32_t client_socket)
 {
-    return CreatePlayerDataResponse(error_code, 0, "", 0, 0, 0, 0, 0, 0, 0, 0, 0.0f, 0.0f, client_socket);
+    return CreatePlayerDataResponse(error_code, 0, "", "", 0, 0, 0, 0, 0, 0, 0, 0, 0.0f, 0.0f, client_socket);
 }
 
 std::vector<uint8_t> ServerPacketManager::CreateItemDataErrorResponse(ResultCode error_code, uint32_t user_id, uint32_t client_socket)
 {
     return CreateItemDataResponse(error_code, user_id, 0, client_socket);
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateShopListErrorResponse(ResultCode error_code, uint32_t client_socket)
+{
+    return CreateShopListResponse(error_code, client_socket);
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateShopItemsErrorResponse(ResultCode error_code, uint32_t shop_id, uint32_t client_socket)
+{
+    return CreateShopItemsResponse(error_code, shop_id, client_socket);
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateShopTransactionErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket)
+{
+    return CreateShopTransactionResponse(error_code, message, 0, client_socket);
 }
 
 std::vector<uint8_t> ServerPacketManager::CreateGenericErrorResponse(EventType response_type, ResultCode error_code, uint32_t client_socket)
@@ -551,6 +789,12 @@ std::vector<uint8_t> ServerPacketManager::CreateGenericErrorResponse(EventType r
         return CreatePlayerDataErrorResponse(error_code, client_socket);
     case EventType_S2C_ItemData:
         return CreateItemDataErrorResponse(error_code, 0, client_socket);
+    case EventType_S2C_ShopList:
+        return CreateShopListErrorResponse(error_code, client_socket);
+    case EventType_S2C_ShopItems:
+        return CreateShopItemsErrorResponse(error_code, 0, client_socket);
+    case EventType_S2C_ShopTransaction:
+        return CreateShopTransactionErrorResponse(error_code, "Generic error", client_socket);
     default:
         SetError("Unsupported response type for generic error");
         return std::vector<uint8_t>();
@@ -674,9 +918,76 @@ bool ServerPacketManager::ValidateItemDataRequest(const C2S_ItemData* request)
         return false;
     }
 
-    // request_type: 0 = 조회, 1 = 추가, 2 = 삭제
-    if (request->request_type() > 2) {
+    // request_type: 0 = 조회, 1 = 추가, 2 = 삭제, 3 = 사용
+    if (request->request_type() > 3) {
         SetError("Invalid request type");
+        return false;
+    }
+
+    return true;
+}
+
+bool ServerPacketManager::ValidateShopListRequest(const C2S_ShopList* request)
+{
+    if (!request) {
+        SetError("Shop list request is null");
+        return false;
+    }
+
+    // request_type: 0 = 상점목록조회
+    if (request->request_type() > 0) {
+        SetError("Invalid request type");
+        return false;
+    }
+
+    return true;
+}
+
+bool ServerPacketManager::ValidateShopItemsRequest(const C2S_ShopItems* request)
+{
+    if (!request) {
+        SetError("Shop items request is null");
+        return false;
+    }
+
+    if (request->shop_id() == 0) {
+        SetError("Invalid shop ID");
+        return false;
+    }
+
+    return true;
+}
+
+bool ServerPacketManager::ValidateShopTransactionRequest(const C2S_ShopTransaction* request)
+{
+    if (!request) {
+        SetError("Shop transaction request is null");
+        return false;
+    }
+
+    if (request->user_id() == 0) {
+        SetError("Invalid user ID");
+        return false;
+    }
+
+    if (request->shop_id() == 0) {
+        SetError("Invalid shop ID");
+        return false;
+    }
+
+    if (request->item_id() == 0) {
+        SetError("Invalid item ID");
+        return false;
+    }
+
+    if (request->item_count() == 0) {
+        SetError("Invalid item count");
+        return false;
+    }
+
+    // transaction_type: 0 = 구매, 1 = 판매
+    if (request->transaction_type() > 1) {
+        SetError("Invalid transaction type");
         return false;
     }
 
@@ -727,6 +1038,12 @@ std::string ServerPacketManager::GetPacketTypeName(EventType packet_type)
     case EventType_S2C_MonsterData: return "S2C_MonsterData";
     case EventType_C2S_PlayerChat: return "C2S_PlayerChat";
     case EventType_S2C_PlayerChat: return "S2C_PlayerChat";
+    case EventType_C2S_ShopList: return "C2S_ShopList";
+    case EventType_S2C_ShopList: return "S2C_ShopList";
+    case EventType_C2S_ShopItems: return "C2S_ShopItems";
+    case EventType_S2C_ShopItems: return "S2C_ShopItems";
+    case EventType_C2S_ShopTransaction: return "C2S_ShopTransaction";
+    case EventType_S2C_ShopTransaction: return "S2C_ShopTransaction";
     default: return "Unknown";
     }
 }
@@ -738,6 +1055,9 @@ std::string ServerPacketManager::GetResultCodeName(ResultCode result)
     case ResultCode_FAIL: return "FAIL";
     case ResultCode_INVALID_USER: return "INVALID_USER";
     case ResultCode_USER_NOT_FOUND: return "USER_NOT_FOUND";
+    case ResultCode_INSUFFICIENT_GOLD: return "INSUFFICIENT_GOLD";
+    case ResultCode_ITEM_NOT_FOUND: return "ITEM_NOT_FOUND";
+    case ResultCode_SHOP_NOT_FOUND: return "SHOP_NOT_FOUND";
     default: return "Unknown";
     }
 }

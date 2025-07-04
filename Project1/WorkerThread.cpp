@@ -1,10 +1,10 @@
-#include "WorkerThread.h"
+ï»¿#include "WorkerThread.h"
 #include "LockFreeQueue.h"
 #include <iostream>
 #include <chrono>
 #include <vector>
 
-// ±âÁ¸ »ı¼ºÀÚ (ÇÏÀ§ È£È¯¼º)
+// ê¸°ì¡´ ìƒì„±ì (í•˜ìœ„ í˜¸í™˜ì„±)
 WorkerThread::WorkerThread(SOCKET ClientSocket)
 	: _do_thread(true), _head(nullptr), _tail(nullptr), _client_count(0), _task_queue(nullptr)
 {
@@ -16,7 +16,7 @@ WorkerThread::WorkerThread(SOCKET ClientSocket)
 	_thread = std::make_unique<std::thread>(&WorkerThread::RunOnServerThread, this);
 }
 
-// »õ·Î¿î »ı¼ºÀÚ (Task Å¥ Æ÷ÇÔ)
+// ìƒˆë¡œìš´ ìƒì„±ì (Task í í¬í•¨)
 WorkerThread::WorkerThread(SOCKET ClientSocket, LockFreeQueue<Task>* taskQueue)
 	: _do_thread(true), _head(nullptr), _tail(nullptr), _client_count(0), _task_queue(taskQueue)
 {
@@ -36,7 +36,7 @@ WorkerThread::~WorkerThread()
 		_thread->join();
 	}
 
-	// ³²Àº ¼ÒÄÏµé Á¤¸®
+	// ë‚¨ì€ ì†Œì¼“ë“¤ ì •ë¦¬
 	SocketNode* current = _head.load();
 	while (current != nullptr) {
 		SocketNode* next = current->next.load();
@@ -58,22 +58,32 @@ void WorkerThread::AddClient(SOCKET clientSocket)
 	// Lock-free tail insertion
 	while (true) {
 		SocketNode* tail = _tail.load();
+		
+		if (tail == nullptr)
+		{
+			SocketNode* newNode = new SocketNode(clientSocket);
+			_head.store(newNode);
+			_tail.store(newNode);
+			_client_count.store(1);
+			break;
+		}
+
 		SocketNode* next = tail->next.load();
 
-		if (tail == _tail.load()) {  // tailÀÌ º¯°æµÇÁö ¾Ê¾Ò´ÂÁö È®ÀÎ
+		if (tail == _tail.load()) {  // tailì´ ë³€ê²½ë˜ì§€ ì•Šì•˜ëŠ”ì§€ í™•ì¸
 			if (next == nullptr) {
-				// tailÀÇ next¸¦ »õ ³ëµå·Î ¼³Á¤ ½Ãµµ
+				// tailì˜ nextë¥¼ ìƒˆ ë…¸ë“œë¡œ ì„¤ì • ì‹œë„
 				if (tail->next.compare_exchange_weak(next, newNode))
 				{
-					// ¼º°øÇÏ¸é tailÀ» »õ ³ëµå·Î ¾÷µ¥ÀÌÆ®
+					// ì„±ê³µí•˜ë©´ tailì„ ìƒˆ ë…¸ë“œë¡œ ì—…ë°ì´íŠ¸
 					_tail.compare_exchange_weak(tail, newNode);
 					_client_count.fetch_add(1);
-					printf("[WorkerThread] Å¬¶óÀÌ¾ğÆ® Ãß°¡: %d\n", _client_count.load());
+					printf("[WorkerThread] í´ë¼ì´ì–¸íŠ¸ ì¶”ê°€: %d\n", _client_count.load());
 					break;
 				}
 			}
 			else {
-				// tailÀÌ ½ÇÁ¦ ¸¶Áö¸·ÀÌ ¾Æ´Ï¸é tailÀ» ¾ÕÀ¸·Î ÀÌµ¿ ½Ãµµ
+				// tailì´ ì‹¤ì œ ë§ˆì§€ë§‰ì´ ì•„ë‹ˆë©´ tailì„ ì•ìœ¼ë¡œ ì´ë™ ì‹œë„
 				_tail.compare_exchange_weak(tail, next);
 			}
 		}
@@ -90,7 +100,7 @@ void WorkerThread::RemoveSocketFromList(SOCKET target_socket)
 			SocketNode* next = current->next.load();
 
 			if (prev == nullptr) {
-				// Ã¹ ¹øÂ° ³ëµå Á¦°Å
+				// ì²« ë²ˆì§¸ ë…¸ë“œ ì œê±°
 				if (_head.compare_exchange_weak(current, next)) {
 					if (next == nullptr) {
 						_tail.store(nullptr);
@@ -98,12 +108,12 @@ void WorkerThread::RemoveSocketFromList(SOCKET target_socket)
 					closesocket(current->socket);
 					delete current;
 					_client_count.fetch_sub(1);
-					printf("[WorkerThread] Å¬¶óÀÌ¾ğÆ® Á¦°Å: %d\n", _client_count.load());
+					printf("[WorkerThread] í´ë¼ì´ì–¸íŠ¸ ì œê±°: %d\n", _client_count.load());
 					return;
 				}
 			}
 			else {
-				// Áß°£ ¶Ç´Â ¸¶Áö¸· ³ëµå Á¦°Å
+				// ì¤‘ê°„ ë˜ëŠ” ë§ˆì§€ë§‰ ë…¸ë“œ ì œê±°
 				if (prev->next.compare_exchange_weak(current, next)) {
 					if (current == _tail.load()) {
 						_tail.store(prev);
@@ -111,7 +121,7 @@ void WorkerThread::RemoveSocketFromList(SOCKET target_socket)
 					closesocket(current->socket);
 					delete current;
 					_client_count.fetch_sub(1);
-					printf("[WorkerThread] Å¬¶óÀÌ¾ğÆ® Á¦°Å: %d\n", _client_count.load());
+					printf("[WorkerThread] í´ë¼ì´ì–¸íŠ¸ ì œê±°: %d\n", _client_count.load());
 					return;
 				}
 			}
@@ -124,23 +134,23 @@ void WorkerThread::RemoveSocketFromList(SOCKET target_socket)
 bool WorkerThread::SendToClient(SOCKET clientSocket, const std::vector<uint8_t>& data)
 {
 	std::lock_guard<std::mutex> lock(_send_mutex);
-
+	
 	if (data.empty()) {
-		std::cerr << "[WorkerThread] Àü¼ÛÇÒ µ¥ÀÌÅÍ°¡ ºñ¾îÀÖÀ½" << std::endl;
+		std::cerr << "[WorkerThread] ì „ì†¡í•  ë°ì´í„°ê°€ ë¹„ì–´ìˆìŒ" << std::endl;
 		return false;
 	}
 
-	// ¸ÕÀú ÆĞÅ¶ Å©±â¸¦ Àü¼Û (4¹ÙÀÌÆ® Çì´õ)
+	// ë¨¼ì € íŒ¨í‚· í¬ê¸°ë¥¼ ì „ì†¡ (4ë°”ì´íŠ¸ í—¤ë”)
 	uint32_t packetSize = static_cast<uint32_t>(data.size());
-	uint32_t networkSize = htonl(packetSize);  // ³×Æ®¿öÅ© ¹ÙÀÌÆ® ¼ø¼­·Î º¯È¯
+	uint32_t networkSize = htonl(packetSize);  // ë„¤íŠ¸ì›Œí¬ ë°”ì´íŠ¸ ìˆœì„œë¡œ ë³€í™˜
 
 	int headerResult = send(clientSocket, reinterpret_cast<const char*>(&networkSize), sizeof(networkSize), 0);
 	if (headerResult <= 0) {
-		std::cerr << "[WorkerThread] Çì´õ Àü¼Û ½ÇÆĞ: " << WSAGetLastError() << std::endl;
+		std::cerr << "[WorkerThread] í—¤ë” ì „ì†¡ ì‹¤íŒ¨: " << WSAGetLastError() << std::endl;
 		return false;
 	}
 
-	// ½ÇÁ¦ ÆĞÅ¶ µ¥ÀÌÅÍ Àü¼Û
+	// ì‹¤ì œ íŒ¨í‚· ë°ì´í„° ì „ì†¡
 	int totalSent = 0;
 	int dataSize = static_cast<int>(data.size());
 
@@ -150,15 +160,15 @@ bool WorkerThread::SendToClient(SOCKET clientSocket, const std::vector<uint8_t>&
 			dataSize - totalSent, 0);
 
 		if (sent <= 0) {
-			std::cerr << "[WorkerThread] µ¥ÀÌÅÍ Àü¼Û ½ÇÆĞ: " << WSAGetLastError() << std::endl;
+			std::cerr << "[WorkerThread] ë°ì´í„° ì „ì†¡ ì‹¤íŒ¨: " << WSAGetLastError() << std::endl;
 			return false;
 		}
 
 		totalSent += sent;
 	}
 
-	std::cout << "[WorkerThread] µ¥ÀÌÅÍ Àü¼Û ¿Ï·á - ¼ÒÄÏ: " << clientSocket
-		<< ", Å©±â: " << data.size() << " bytes" << std::endl;
+	std::cout << "[WorkerThread] ë°ì´í„° ì „ì†¡ ì™„ë£Œ - ì†Œì¼“: " << clientSocket
+		<< ", í¬ê¸°: " << data.size() << " bytes" << std::endl;
 	return true;
 }
 
@@ -176,7 +186,7 @@ bool WorkerThread::HasClient(SOCKET clientSocket) const
 
 void WorkerThread::RunOnServerThread()
 {
-	printf("[WorkerThread] WorkerThread ½ÃÀÛ\n");
+	printf("[WorkerThread] WorkerThread ì‹œì‘\n");
 
 	while (_do_thread.load()) {
 		if (_client_count.load() == 0) {
@@ -190,7 +200,7 @@ void WorkerThread::RunOnServerThread()
 		SOCKET maxSock = 0;
 		std::vector<SOCKET> socketList;
 
-		// ÇöÀç ¿¬°áµÈ ¼ÒÄÏµéÀ» º¹»ç (lock-free ¼øÈ¸)
+		// í˜„ì¬ ì—°ê²°ëœ ì†Œì¼“ë“¤ì„ ë³µì‚¬ (lock-free ìˆœíšŒ)
 		SocketNode* current = _head.load();
 		while (current != nullptr) {
 			SOCKET s = current->socket;
@@ -216,7 +226,7 @@ void WorkerThread::RunOnServerThread()
 			continue;
 		}
 
-		// ÀÌº¥Æ® ¹ß»ıÇÑ ¼ÒÄÏµé Ã³¸®
+		// ì´ë²¤íŠ¸ ë°œìƒí•œ ì†Œì¼“ë“¤ ì²˜ë¦¬
 		for (SOCKET s : socketList) {
 			if (FD_ISSET(s, &readSet)) {
 				char buffer[4096];
@@ -227,37 +237,37 @@ void WorkerThread::RunOnServerThread()
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 
-	printf("[WorkerThread] WorkerThread Á¾·á\n");
+	printf("[WorkerThread] WorkerThread ì¢…ë£Œ\n");
 }
 
 void WorkerThread::ProcessClientData(SOCKET clientSocket, char* buffer, int bufferSize)
 {
-	// ¸ÕÀú ÆĞÅ¶ Å©±â ÀĞ±â (4¹ÙÀÌÆ® Çì´õ)
+	// ë¨¼ì € íŒ¨í‚· í¬ê¸° ì½ê¸° (4ë°”ì´íŠ¸ í—¤ë”)
 	uint32_t packetSize = 0;
 	int headerReceived = recv(clientSocket, reinterpret_cast<char*>(&packetSize), sizeof(packetSize), 0);
 
 	if (headerReceived <= 0) {
-		// Å¬¶óÀÌ¾ğÆ® ¿¬°á Á¾·á
+		// í´ë¼ì´ì–¸íŠ¸ ì—°ê²° ì¢…ë£Œ
 		RemoveSocketFromList(clientSocket);
-		printf("[WorkerThread] Å¬¶óÀÌ¾ğÆ® ¿¬°á Á¾·á. ³²Àº Å¬¶óÀÌ¾ğÆ®: %d\n", _client_count.load());
+		printf("[WorkerThread] í´ë¼ì´ì–¸íŠ¸ ì—°ê²° ì¢…ë£Œ. ë‚¨ì€ í´ë¼ì´ì–¸íŠ¸: %d\n", _client_count.load());
 		return;
 	}
 
 	if (headerReceived != sizeof(packetSize)) {
-		std::cerr << "[WorkerThread] ºÒ¿ÏÀüÇÑ Çì´õ ¼ö½Å" << std::endl;
+		std::cerr << "[WorkerThread] ë¶ˆì™„ì „í•œ í—¤ë” ìˆ˜ì‹ " << std::endl;
 		return;
 	}
 
-	// ³×Æ®¿öÅ© ¹ÙÀÌÆ® ¼ø¼­¿¡¼­ È£½ºÆ® ¹ÙÀÌÆ® ¼ø¼­·Î º¯È¯
+	// ë„¤íŠ¸ì›Œí¬ ë°”ì´íŠ¸ ìˆœì„œì—ì„œ í˜¸ìŠ¤íŠ¸ ë°”ì´íŠ¸ ìˆœì„œë¡œ ë³€í™˜
 	packetSize = ntohl(packetSize);
 
-	if (packetSize == 0 || packetSize > 65536) { // ÃÖ´ë 64KB Á¦ÇÑ
-		std::cerr << "[WorkerThread] Àß¸øµÈ ÆĞÅ¶ Å©±â: " << packetSize << std::endl;
+	if (packetSize == 0 || packetSize > 65536) { // ìµœëŒ€ 64KB ì œí•œ
+		std::cerr << "[WorkerThread] ì˜ëª»ëœ íŒ¨í‚· í¬ê¸°: " << packetSize << std::endl;
 		RemoveSocketFromList(clientSocket);
 		return;
 	}
 
-	// ½ÇÁ¦ ÆĞÅ¶ µ¥ÀÌÅÍ ÀĞ±â
+	// ì‹¤ì œ íŒ¨í‚· ë°ì´í„° ì½ê¸°
 	std::vector<uint8_t> packetData(packetSize);
 	int totalReceived = 0;
 
@@ -267,7 +277,7 @@ void WorkerThread::ProcessClientData(SOCKET clientSocket, char* buffer, int buff
 			packetSize - totalReceived, 0);
 
 		if (received <= 0) {
-			std::cerr << "[WorkerThread] ÆĞÅ¶ µ¥ÀÌÅÍ ¼ö½Å ½ÇÆĞ" << std::endl;
+			std::cerr << "[WorkerThread] íŒ¨í‚· ë°ì´í„° ìˆ˜ì‹  ì‹¤íŒ¨" << std::endl;
 			RemoveSocketFromList(clientSocket);
 			return;
 		}
@@ -275,17 +285,17 @@ void WorkerThread::ProcessClientData(SOCKET clientSocket, char* buffer, int buff
 		totalReceived += received;
 	}
 
-	// Task »ı¼º ¹× Å¥¿¡ Ãß°¡
+	// Task ìƒì„± ë° íì— ì¶”ê°€
 	if (_task_queue) {
 		Task task(clientSocket, 0, packetData.data(), packetData.size());
 
 		_task_queue->enqueue(task);
-			std::cout << "[WorkerThread] ÆĞÅ¶ ¼ö½Å ¿Ï·á - ¼ÒÄÏ: " << clientSocket
-			<< ", Å©±â: " << packetSize << " bytes" << std::endl;
+			std::cout << "[WorkerThread] íŒ¨í‚· ìˆ˜ì‹  ì™„ë£Œ - ì†Œì¼“: " << clientSocket
+			<< ", í¬ê¸°: " << packetSize << " bytes" << std::endl;
 
 	}
 	else {
-		std::cerr << "[WorkerThread] Task Å¥°¡ ¼³Á¤µÇÁö ¾ÊÀ½" << std::endl;
+		std::cerr << "[WorkerThread] Task íê°€ ì„¤ì •ë˜ì§€ ì•ŠìŒ" << std::endl;
 	}
 }
 

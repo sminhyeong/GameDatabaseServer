@@ -249,6 +249,72 @@ std::vector<uint8_t> ClientPacketManager::CreateChatQueryRequest(uint32_t reques
     }
 }
 
+std::vector<uint8_t> ClientPacketManager::CreateShopListRequest(uint32_t request_type, uint32_t map_id)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto shopListRequest = CreateC2S_ShopList(builder, request_type, map_id);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_ShopList, shopListRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopListRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateShopItemsRequest(uint32_t shop_id)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto shopItemsRequest = CreateC2S_ShopItems(builder, shop_id);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_ShopItems, shopItemsRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopItemsRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateShopTransactionRequest(uint32_t user_id, uint32_t shop_id, uint32_t item_id, uint32_t item_count, uint32_t transaction_type)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto transactionRequest = CreateC2S_ShopTransaction(builder, user_id, shop_id, item_id, item_count, transaction_type);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_ShopTransaction, transactionRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateShopTransactionRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
 // === 서버 응답 패킷 파싱 (S2C) ===
 
 const S2C_Login* ClientPacketManager::ParseLoginResponse(const uint8_t* data, size_t size)
@@ -356,6 +422,51 @@ const S2C_PlayerChat* ClientPacketManager::ParsePlayerChatResponse(const uint8_t
     return packet->packet_event_as_S2C_PlayerChat();
 }
 
+const S2C_ShopList* ClientPacketManager::ParseShopListResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_ShopList) {
+        SetError("Invalid shop list response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_ShopList();
+}
+
+const S2C_ShopItems* ClientPacketManager::ParseShopItemsResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_ShopItems) {
+        SetError("Invalid shop items response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_ShopItems();
+}
+
+const S2C_ShopTransaction* ClientPacketManager::ParseShopTransactionResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_ShopTransaction) {
+        SetError("Invalid shop transaction response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_ShopTransaction();
+}
+
 // === 편의 함수들 ===
 
 bool ClientPacketManager::IsLoginSuccess(const S2C_Login* response)
@@ -374,6 +485,21 @@ bool ClientPacketManager::IsPlayerDataValid(const S2C_PlayerData* response)
 }
 
 bool ClientPacketManager::IsItemDataValid(const S2C_ItemData* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsShopListValid(const S2C_ShopList* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsShopItemsValid(const S2C_ShopItems* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsShopTransactionSuccess(const S2C_ShopTransaction* response)
 {
     return response && response->result() == ResultCode_SUCCESS;
 }
@@ -422,6 +548,12 @@ std::string ClientPacketManager::GetPacketTypeName(EventType packet_type)
     case EventType_S2C_MonsterData: return "S2C_MonsterData";
     case EventType_C2S_PlayerChat: return "C2S_PlayerChat";
     case EventType_S2C_PlayerChat: return "S2C_PlayerChat";
+    case EventType_C2S_ShopList: return "C2S_ShopList";
+    case EventType_S2C_ShopList: return "S2C_ShopList";
+    case EventType_C2S_ShopItems: return "C2S_ShopItems";
+    case EventType_S2C_ShopItems: return "S2C_ShopItems";
+    case EventType_C2S_ShopTransaction: return "C2S_ShopTransaction";
+    case EventType_S2C_ShopTransaction: return "S2C_ShopTransaction";
     default: return "Unknown";
     }
 }
@@ -433,6 +565,9 @@ std::string ClientPacketManager::GetResultCodeName(ResultCode result)
     case ResultCode_FAIL: return "FAIL";
     case ResultCode_INVALID_USER: return "INVALID_USER";
     case ResultCode_USER_NOT_FOUND: return "USER_NOT_FOUND";
+    case ResultCode_INSUFFICIENT_GOLD: return "INSUFFICIENT_GOLD";
+    case ResultCode_ITEM_NOT_FOUND: return "ITEM_NOT_FOUND";
+    case ResultCode_SHOP_NOT_FOUND: return "SHOP_NOT_FOUND";
     default: return "Unknown";
     }
 }

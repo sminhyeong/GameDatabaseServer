@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <list>
 #include <thread>
 #include <atomic>
@@ -12,7 +12,7 @@ class LockFreeQueue;
 
 #define MAX_CLIENT_COUNT 50
 
-// Lock-free ³ëµå ±¸Á¶Ã¼
+// Lock-free ë…¸ë“œ êµ¬ì¡°ì²´
 struct SocketNode {
     SOCKET socket;
     std::atomic<SocketNode*> next;
@@ -26,23 +26,23 @@ private:
     std::atomic<bool> _do_thread;
     std::atomic<SocketNode*> _head;  // Lock-free linked list head
     std::atomic<SocketNode*> _tail;  // Lock-free linked list tail
-    std::atomic<int> _client_count;  // Å¬¶óÀÌ¾ğÆ® ¼ö ÃßÀû
+    std::atomic<int> _client_count;  // í´ë¼ì´ì–¸íŠ¸ ìˆ˜ ì¶”ì 
     std::unique_ptr<std::thread> _thread;
 
-    LockFreeQueue<Task>* _task_queue;  // Task Å¥ ÂüÁ¶
-    std::mutex _send_mutex;  // Àü¼Û ½Ã µ¿±âÈ­¿ë
+    LockFreeQueue<Task>* _task_queue;  // Task í ì°¸ì¡°
+    std::mutex _send_mutex;  // ì „ì†¡ ì‹œ ë™ê¸°í™”ìš©
 
     void RunOnServerThread();
     void ProcessClientData(SOCKET clientSocket, char* buffer, int bufferSize);
 
-    // Lock-free ¸®½ºÆ®¿¡¼­ ³ëµå Á¦°Å (³»ºÎ¿ëÀ¸·Î »ç¿ë)
+    // Lock-free ë¦¬ìŠ¤íŠ¸ì—ì„œ ë…¸ë“œ ì œê±° (ë‚´ë¶€ìš©ìœ¼ë¡œ ì‚¬ìš©)
     void RemoveSocketFromList(SOCKET target_socket);
 
 public:
-    // ±âÁ¸ »ı¼ºÀÚ (ÇÏÀ§ È£È¯¼º)
+    // ê¸°ì¡´ ìƒì„±ì (í•˜ìœ„ í˜¸í™˜ì„±)
     WorkerThread(SOCKET ClientSocket);
 
-    // »õ·Î¿î »ı¼ºÀÚ (Task Å¥ Æ÷ÇÔ)
+    // ìƒˆë¡œìš´ ìƒì„±ì (Task í í¬í•¨)
     WorkerThread(SOCKET ClientSocket, LockFreeQueue<Task>* taskQueue);
 
     ~WorkerThread();
@@ -50,10 +50,10 @@ public:
     void AddClient(SOCKET clientSocket);
     void StopThread();
 
-    // Å¬¶óÀÌ¾ğÆ®¿¡°Ô µ¥ÀÌÅÍ Àü¼Û
+    // í´ë¼ì´ì–¸íŠ¸ì—ê²Œ ë°ì´í„° ì „ì†¡
     bool SendToClient(SOCKET clientSocket, const std::vector<uint8_t>& data);
 
-    // Æ¯Á¤ ¼ÒÄÏÀÌ ÀÌ ¿öÄ¿¿¡ ¼ÓÇÏ´ÂÁö È®ÀÎ
+    // íŠ¹ì • ì†Œì¼“ì´ ì´ ì›Œì»¤ì— ì†í•˜ëŠ”ì§€ í™•ì¸
     bool HasClient(SOCKET clientSocket) const;
 
     inline bool IsFullAccess() const {

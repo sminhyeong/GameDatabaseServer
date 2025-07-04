@@ -1,638 +1,1120 @@
+Ôªø#define NOMINMAX
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
-#define NOMINMAX
+#pragma comment(lib, "ws2_32.lib")
 
 #include <iostream>
-#include <winsock2.h>
-#include <vector>
 #include <string>
+#include <vector>
 #include <thread>
 #include <chrono>
+#include <map>
+#include <functional>
+#include <iomanip>
+#include <WinSock2.h>
+#include <WS2tcpip.h>
 #include "ClientPacketManager.h"
 #include "UserEvent_generated.h"
 
-#pragma comment(lib, "ws2_32.lib")
-
-class GameClient {
+class TestClient {
 private:
-    SOCKET sock;
-    ClientPacketManager packetManager;
-    uint32_t currentUserId;
-    bool isConnected;
-    std::string currentUsername;
+    SOCKET _client_socket;
+    ClientPacketManager _packet_manager;
+    bool _connected;
+    std::string _server_ip;
+    int _server_port;
+    uint32_t _current_user_id;
+    std::string _current_username;
+
+    // Ïó∞Í≤∞ ÏïàÏ†ïÏÑ±ÏùÑ ÏúÑÌïú ÏÑ§Ï†ï
+    static const int RECV_TIMEOUT_MS = 10000;
+    static const int SEND_TIMEOUT_MS = 5000;
+
+    // ÌÖåÏä§Ìä∏ Î©îÎâ¥
+    std::map<int, std::pair<std::string, std::function<bool()>>> _test_functions;
 
 public:
-    GameClient() : sock(INVALID_SOCKET), currentUserId(0), isConnected(false) {
-        WSAData wsaData;
-        WSAStartup(MAKEWORD(2, 2), &wsaData);
+    TestClient(const std::string& ip = "127.0.0.1", int port = 7777)
+        : _client_socket(INVALID_SOCKET), _connected(false),
+        _server_ip(ip), _server_port(port), _current_user_id(0) {
+        InitializeTestFunctions();
     }
 
-    ~GameClient() {
+    ~TestClient() {
         Disconnect();
         WSACleanup();
     }
 
-    bool Connect(const char* ip, int port) {
-        sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock == INVALID_SOCKET) {
-            std::cerr << "º“ƒœ ª˝º∫ Ω«∆–" << std::endl;
+    void InitializeTestFunctions() {
+        _test_functions[1] = { "Login Test", [this]() { return TestLoginInteractive(); } };
+        _test_functions[2] = { "Create Account Test", [this]() { return TestCreateAccountInteractive(); } };
+        _test_functions[3] = { "Player Data Query Test", [this]() { return TestPlayerDataQuery(); } };
+        _test_functions[4] = { "Player Data Update Test", [this]() { return TestPlayerDataUpdate(); } };
+        _test_functions[5] = { "Item Data Query Test", [this]() { return TestItemDataQuery(); } };
+        _test_functions[6] = { "Monster Data Query Test", [this]() { return TestMonsterDataQuery(); } };
+        _test_functions[7] = { "Chat Send Test", [this]() { return TestChatSendInteractive(); } };
+        _test_functions[8] = { "Shop List Test", [this]() { return TestShopList(); } };
+        _test_functions[9] = { "Shop Items Test", [this]() { return TestShopItems(); } };
+        _test_functions[10] = { "Shop Transaction Test", [this]() { return TestShopTransaction(); } };
+        _test_functions[11] = { "Logout Test", [this]() { return TestLogout(); } };
+    }
+
+    bool Initialize() {
+        WSADATA wsaData;
+        int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+        if (result != 0) {
+            std::cerr << "[TestClient] WSAStartup failed: " << result << std::endl;
             return false;
         }
-
-        sockaddr_in serverAddr;
-        serverAddr.sin_family = AF_INET;
-        serverAddr.sin_addr.s_addr = inet_addr(ip);
-        serverAddr.sin_port = htons(port);
-
-        if (connect(sock, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-            std::cerr << "º≠πˆ ø¨∞· Ω«∆–: " << WSAGetLastError() << std::endl;
-            closesocket(sock);
-            sock = INVALID_SOCKET;
-            return false;
-        }
-
-        isConnected = true;
-        std::cout << "º≠πˆ ø¨∞· º∫∞¯! (" << ip << ":" << port << ")" << std::endl;
         return true;
     }
 
-    void Disconnect() {
-        if (sock != INVALID_SOCKET) {
-            closesocket(sock);
-            sock = INVALID_SOCKET;
+    bool Connect() {
+        if (_connected) {
+            std::cout << "[TestClient] Already connected" << std::endl;
+            return true;
         }
-        isConnected = false;
-        currentUserId = 0;
-        currentUsername.clear();
+
+        _client_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (_client_socket == INVALID_SOCKET) {
+            std::cerr << "[TestClient] Failed to create socket: " << WSAGetLastError() << std::endl;
+            return false;
+        }
+
+        // ÏÜåÏºì ÌÉÄÏûÑÏïÑÏõÉ ÏÑ§Ï†ï
+        SetSocketTimeouts();
+
+        // TCP_NODELAY ÏÑ§Ï†ï
+        int flag = 1;
+        setsockopt(_client_socket, IPPROTO_TCP, TCP_NODELAY, (char*)&flag, sizeof(flag));
+
+        sockaddr_in serverAddr;
+        memset(&serverAddr, 0, sizeof(serverAddr));
+        serverAddr.sin_family = AF_INET;
+        serverAddr.sin_port = htons(_server_port);
+
+        int inetResult = inet_pton(AF_INET, _server_ip.c_str(), &serverAddr.sin_addr);
+        if (inetResult <= 0) {
+            std::cerr << "[TestClient] Invalid IP address: " << _server_ip << std::endl;
+            closesocket(_client_socket);
+            _client_socket = INVALID_SOCKET;
+            return false;
+        }
+
+        int result = connect(_client_socket, (sockaddr*)&serverAddr, sizeof(serverAddr));
+        if (result == SOCKET_ERROR) {
+            int error = WSAGetLastError();
+            std::cerr << "[TestClient] Failed to connect: " << error << std::endl;
+            closesocket(_client_socket);
+            _client_socket = INVALID_SOCKET;
+            return false;
+        }
+
+        _connected = true;
+        std::cout << "[TestClient] Successfully connected to server " << _server_ip << ":" << _server_port << std::endl;
+        return true;
     }
 
-    bool SendPacket(const std::vector<uint8_t>& data) {
-        if (!isConnected || data.empty()) {
+    void SetSocketTimeouts() {
+        if (_client_socket == INVALID_SOCKET) return;
+
+        int recv_timeout = RECV_TIMEOUT_MS;
+        setsockopt(_client_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&recv_timeout, sizeof(recv_timeout));
+
+        int send_timeout = SEND_TIMEOUT_MS;
+        setsockopt(_client_socket, SOL_SOCKET, SO_SNDTIMEO, (char*)&send_timeout, sizeof(send_timeout));
+    }
+
+    void Disconnect() {
+        if (_connected && _client_socket != INVALID_SOCKET) {
+            shutdown(_client_socket, SD_BOTH);
+            closesocket(_client_socket);
+            _client_socket = INVALID_SOCKET;
+            _connected = false;
+            std::cout << "[TestClient] Disconnected from server" << std::endl;
+        }
+    }
+
+    void HandleConnectionLoss() {
+        std::cout << "\n[ERROR] Connection lost! Exiting client..." << std::endl;
+        _connected = false;
+        exit(1);
+    }
+
+    bool SendPacket(const std::vector<uint8_t>& packet) {
+        if (!_connected || packet.empty()) {
+            std::cerr << "[TestClient] Not connected or empty packet" << std::endl;
+            HandleConnectionLoss();
             return false;
         }
 
-        // ∆–≈∂ ≈©±‚ ¿¸º€ (4πŸ¿Ã∆Æ «Ï¥ı)
-        uint32_t size = htonl(static_cast<uint32_t>(data.size()));
-        if (send(sock, (char*)&size, sizeof(size), 0) <= 0) {
-            std::cerr << "«Ï¥ı ¿¸º€ Ω«∆–" << std::endl;
+        try {
+            // Ìå®ÌÇ∑ ÌÅ¨Í∏∞ Ï†ÑÏÜ° (4Î∞îÏù¥Ìä∏ Ìó§Îçî)
+            uint32_t packetSize = static_cast<uint32_t>(packet.size());
+            uint32_t networkSize = htonl(packetSize);
+
+            // Ìó§Îçî Ï†ÑÏÜ°
+            if (!SendData(reinterpret_cast<const char*>(&networkSize), sizeof(networkSize))) {
+                std::cerr << "[TestClient] Failed to send header" << std::endl;
+                HandleConnectionLoss();
+                return false;
+            }
+
+            // Îç∞Ïù¥ÌÑ∞ Ï†ÑÏÜ°
+            if (!SendData(reinterpret_cast<const char*>(packet.data()), packet.size())) {
+                std::cerr << "[TestClient] Failed to send packet data" << std::endl;
+                HandleConnectionLoss();
+                return false;
+            }
+
+            std::cout << "[TestClient] Sent packet: " << packet.size() << " bytes" << std::endl;
+            return true;
+        }
+        catch (const std::exception& e) {
+            std::cerr << "[TestClient] Exception in SendPacket: " << e.what() << std::endl;
+            HandleConnectionLoss();
             return false;
         }
+    }
 
-        // Ω«¡¶ µ•¿Ã≈Õ ¿¸º€
-        int totalSent = 0;
-        while (totalSent < data.size()) {
-            int sent = send(sock, (char*)data.data() + totalSent,
-                data.size() - totalSent, 0);
-            if (sent <= 0) {
-                std::cerr << "µ•¿Ã≈Õ ¿¸º€ Ω«∆–" << std::endl;
+    bool SendData(const char* data, size_t size) {
+        size_t totalSent = 0;
+        while (totalSent < size) {
+            int sent = send(_client_socket, data + totalSent, static_cast<int>(size - totalSent), 0);
+            if (sent == SOCKET_ERROR) {
+                int error = WSAGetLastError();
+                std::cerr << "[TestClient] Send error: " << error << std::endl;
                 return false;
             }
             totalSent += sent;
         }
-
-        std::cout << "[SEND] ∆–≈∂ ¿¸º€ øœ∑·: " << data.size() << " bytes" << std::endl;
         return true;
     }
 
     std::vector<uint8_t> ReceivePacket() {
-        if (!isConnected) {
+        if (!_connected) {
+            std::cerr << "[TestClient] Not connected" << std::endl;
+            HandleConnectionLoss();
             return std::vector<uint8_t>();
         }
 
-        // ∆–≈∂ ≈©±‚ ºˆΩ≈ (4πŸ¿Ã∆Æ «Ï¥ı)
-        uint32_t packetSize = 0;
-        int headerReceived = recv(sock, (char*)&packetSize, sizeof(packetSize), 0);
-
-        if (headerReceived <= 0) {
-            std::cerr << "«Ï¥ı ºˆΩ≈ Ω«∆–" << std::endl;
-            return std::vector<uint8_t>();
-        }
-
-        packetSize = ntohl(packetSize);
-        if (packetSize == 0 || packetSize > 65536) {
-            std::cerr << "¿ﬂ∏¯µ» ∆–≈∂ ≈©±‚: " << packetSize << std::endl;
-            return std::vector<uint8_t>();
-        }
-
-        // Ω«¡¶ ∆–≈∂ µ•¿Ã≈Õ ºˆΩ≈
-        std::vector<uint8_t> packetData(packetSize);
-        int totalReceived = 0;
-
-        while (totalReceived < packetSize) {
-            int received = recv(sock, (char*)packetData.data() + totalReceived,
-                packetSize - totalReceived, 0);
-            if (received <= 0) {
-                std::cerr << "∆–≈∂ µ•¿Ã≈Õ ºˆΩ≈ Ω«∆–" << std::endl;
+        try {
+            // Ìå®ÌÇ∑ ÌÅ¨Í∏∞ ÏàòÏã† (4Î∞îÏù¥Ìä∏ Ìó§Îçî)
+            uint32_t packetSize = 0;
+            if (!ReceiveData(reinterpret_cast<char*>(&packetSize), sizeof(packetSize))) {
+                std::cerr << "[TestClient] Failed to receive header" << std::endl;
+                HandleConnectionLoss();
                 return std::vector<uint8_t>();
+            }
+
+            // ÎÑ§Ìä∏ÏõåÌÅ¨ Î∞îÏù¥Ìä∏ ÏàúÏÑúÏóêÏÑú Ìò∏Ïä§Ìä∏ Î∞îÏù¥Ìä∏ ÏàúÏÑúÎ°ú Î≥ÄÌôò
+            packetSize = ntohl(packetSize);
+
+            if (packetSize == 0 || packetSize > 65536) {
+                std::cerr << "[TestClient] Invalid packet size: " << packetSize << std::endl;
+                HandleConnectionLoss();
+                return std::vector<uint8_t>();
+            }
+
+            // Ïã§Ï†ú Ìå®ÌÇ∑ Îç∞Ïù¥ÌÑ∞ ÏàòÏã†
+            std::vector<uint8_t> packetData(packetSize);
+            if (!ReceiveData(reinterpret_cast<char*>(packetData.data()), packetSize)) {
+                std::cerr << "[TestClient] Failed to receive packet data" << std::endl;
+                HandleConnectionLoss();
+                return std::vector<uint8_t>();
+            }
+
+            std::cout << "[TestClient] Received packet: " << packetSize << " bytes" << std::endl;
+            return packetData;
+        }
+        catch (const std::exception& e) {
+            std::cerr << "[TestClient] Exception in ReceivePacket: " << e.what() << std::endl;
+            HandleConnectionLoss();
+            return std::vector<uint8_t>();
+        }
+    }
+
+    bool ReceiveData(char* buffer, size_t size) {
+        size_t totalReceived = 0;
+        while (totalReceived < size) {
+            int received = recv(_client_socket, buffer + totalReceived,
+                static_cast<int>(size - totalReceived), 0);
+            if (received == SOCKET_ERROR) {
+                int error = WSAGetLastError();
+                std::cerr << "[TestClient] Receive error: " << error << std::endl;
+                return false;
+            }
+            else if (received == 0) {
+                std::cerr << "[TestClient] Connection closed by server" << std::endl;
+                return false;
             }
             totalReceived += received;
         }
-
-        std::cout << "[RECV] ∆–≈∂ ºˆΩ≈ øœ∑·: " << packetSize << " bytes" << std::endl;
-        return packetData;
+        return true;
     }
 
-    bool Login(const std::string& username, const std::string& password) {
-        std::cout << "\n=== ∑Œ±◊¿Œ Ω√µµ ===" << std::endl;
-        std::cout << "ªÁøÎ¿⁄∏Ì: " << username << std::endl;
+    // === ÏÇ¨Ïö©Ïûê ÏûÖÎ†• ÎèÑÏö∞ÎØ∏ Ìï®ÏàòÎì§ ===
 
-        // 1. ∑Œ±◊¿Œ ø‰√ª ∆–≈∂ ª˝º∫
-        auto loginPacket = packetManager.CreateLoginRequest(username, password);
-        if (loginPacket.empty()) {
-            std::cerr << "∑Œ±◊¿Œ ∆–≈∂ ª˝º∫ Ω«∆–: " << packetManager.GetLastError() << std::endl;
+    std::string GetUserInput(const std::string& prompt) {
+        std::string input;
+        std::cout << prompt;
+        std::getline(std::cin, input);
+        return input;
+    }
+
+    void ClearInputBuffer() {
+        std::cin.ignore(10000, '\n');
+    }
+
+    // === Ïù∏ÌÑ∞ÎûôÌã∞Î∏å ÌÖåÏä§Ìä∏ Ìï®ÏàòÎì§ ===
+
+    bool TestLoginInteractive() {
+        std::cout << "\n=== Login Test ===" << std::endl;
+
+        std::string username = GetUserInput("Enter username: ");
+        std::string password = GetUserInput("Enter password: ");
+
+        if (username.empty() || password.empty()) {
+            std::cout << "[ERROR] Username and password cannot be empty" << std::endl;
             return false;
         }
 
-        // 2. ∆–≈∂ ¿¸º€
+        return TestLogin(username, password);
+    }
+
+    bool TestCreateAccountInteractive() {
+        std::cout << "\n=== Create Account Test ===" << std::endl;
+
+        std::string username = GetUserInput("Enter new username: ");
+        std::string password = GetUserInput("Enter new password: ");
+        std::string nickname = GetUserInput("Enter nickname: ");
+
+        if (username.empty() || password.empty() || nickname.empty()) {
+            std::cout << "[ERROR] All fields must be filled" << std::endl;
+            return false;
+        }
+
+        return TestCreateAccount(username, password, nickname);
+    }
+
+    bool TestChatSendInteractive() {
+        std::cout << "\n=== Chat Send Test ===" << std::endl;
+
+        if (_current_user_id == 0) {
+            std::cerr << "[FAIL] No logged in user" << std::endl;
+            return false;
+        }
+
+        std::string message = GetUserInput("Enter chat message: ");
+        if (message.empty()) {
+            std::cout << "[ERROR] Message cannot be empty" << std::endl;
+            return false;
+        }
+
+        std::cout << "Chat types: 0=Global, 1=Whisper, 2=Guild" << std::endl;
+        std::string chatTypeStr = GetUserInput("Enter chat type (0-2): ");
+
+        uint32_t chatType = 0;
+        try {
+            chatType = std::stoul(chatTypeStr);
+            if (chatType > 2) {
+                std::cout << "[ERROR] Invalid chat type. Using Global (0)" << std::endl;
+                chatType = 0;
+            }
+        }
+        catch (...) {
+            std::cout << "[ERROR] Invalid input. Using Global (0)" << std::endl;
+            chatType = 0;
+        }
+
+        uint32_t receiverId = 0;
+        if (chatType == 1) { // Whisper
+            std::string receiverStr = GetUserInput("Enter receiver ID: ");
+            try {
+                receiverId = std::stoul(receiverStr);
+            }
+            catch (...) {
+                std::cout << "[ERROR] Invalid receiver ID" << std::endl;
+                return false;
+            }
+        }
+
+        return TestChatSend(_current_user_id, receiverId, message, chatType);
+    }
+
+    // === Í∏∞Î≥∏ ÌÖåÏä§Ìä∏ Ìï®ÏàòÎì§ ===
+
+    bool TestLogin(const std::string& username, const std::string& password) {
+        std::cout << "Testing login with username: " << username << std::endl;
+
+        auto loginPacket = _packet_manager.CreateLoginRequest(username, password);
+        if (loginPacket.empty()) {
+            std::cerr << "Failed to create login packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
         if (!SendPacket(loginPacket)) {
             return false;
         }
 
-        // 3. ¿¿¥‰ ºˆΩ≈
-        auto responseData = ReceivePacket();
-        if (responseData.empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
             return false;
         }
 
-        // 4. ¿¿¥‰ ∆ƒΩÃ
-        const S2C_Login* loginResponse = packetManager.ParseLoginResponse(responseData.data(), responseData.size());
+        const S2C_Login* loginResponse = _packet_manager.ParseLoginResponse(response.data(), response.size());
         if (!loginResponse) {
-            std::cerr << "∑Œ±◊¿Œ ¿¿¥‰ ∆ƒΩÃ Ω«∆–: " << packetManager.GetLastError() << std::endl;
+            std::cerr << "Failed to parse login response: " << _packet_manager.GetLastError() << std::endl;
             return false;
         }
 
-        // 5. ∞·∞˙ »Æ¿Œ
-        if (packetManager.IsLoginSuccess(loginResponse)) {
-            currentUserId = loginResponse->user_id();
-            currentUsername = loginResponse->username()->str();
-            std::cout << "? ∑Œ±◊¿Œ º∫∞¯!" << std::endl;
-            std::cout << "   ªÁøÎ¿⁄ ID: " << currentUserId << std::endl;
-            std::cout << "   ªÁøÎ¿⁄∏Ì: " << currentUsername << std::endl;
-            std::cout << "   ∑π∫ß: " << loginResponse->level() << std::endl;
-            return true;
+        bool success = _packet_manager.IsLoginSuccess(loginResponse);
+        if (success) {
+            _current_user_id = loginResponse->user_id();
+            _current_username = loginResponse->username()->str();
+            std::cout << "[PASS] Login SUCCESS - User ID: " << _current_user_id
+                << ", Username: " << _current_username
+                << ", Nickname: " << loginResponse->nickname()->str()
+                << ", Level: " << loginResponse->level() << std::endl;
         }
         else {
-            std::cout << "? ∑Œ±◊¿Œ Ω«∆–: " << packetManager.GetResultCodeName(loginResponse->result()) << std::endl;
-            return false;
+            std::cout << "[FAIL] Login FAILED - Result: " << static_cast<int>(loginResponse->result()) << std::endl;
         }
+
+        return success;
     }
 
-    bool Logout() {
-        if (currentUserId == 0) {
-            std::cerr << "? ∑Œ±◊¿Œ ªÛ≈¬∞° æ∆¥’¥œ¥Ÿ!" << std::endl;
-            return false;
-        }
+    bool TestCreateAccount(const std::string& username, const std::string& password, const std::string& nickname) {
+        std::cout << "Testing create account with username: " << username << std::endl;
 
-        std::cout << "\n=== ∑Œ±◊æ∆øÙ Ω√µµ ===" << std::endl;
-        std::cout << "ªÁøÎ¿⁄: " << currentUsername << " (ID: " << currentUserId << ")" << std::endl;
-
-        // 1. ∑Œ±◊æ∆øÙ ø‰√ª ∆–≈∂ ª˝º∫
-        auto logoutPacket = packetManager.CreateLogoutRequest(currentUserId);
-        if (logoutPacket.empty()) {
-            std::cerr << "? ∑Œ±◊æ∆øÙ ∆–≈∂ ª˝º∫ Ω«∆–: " << packetManager.GetLastError() << std::endl;
-            return false;
-        }
-
-        // 2. ∆–≈∂ ¿¸º€
-        if (!SendPacket(logoutPacket)) {
-            return false;
-        }
-
-        // 3. ¿¿¥‰ ºˆΩ≈
-        auto responseData = ReceivePacket();
-        if (responseData.empty()) {
-            return false;
-        }
-
-        // 4. ¿¿¥‰ ∆ƒΩÃ
-        const S2C_Logout* logoutResponse = packetManager.ParseLogoutResponse(responseData.data(), responseData.size());
-        if (!logoutResponse) {
-            std::cerr << "? ∑Œ±◊æ∆øÙ ¿¿¥‰ ∆ƒΩÃ Ω«∆–: " << packetManager.GetLastError() << std::endl;
-            return false;
-        }
-
-        // 5. ∞·∞˙ »Æ¿Œ
-        if (logoutResponse->result() == ResultCode_SUCCESS) {
-            std::cout << "? ∑Œ±◊æ∆øÙ º∫∞¯!" << std::endl;
-            if (logoutResponse->message()) {
-                std::cout << "   ∏ﬁΩ√¡ˆ: " << logoutResponse->message()->c_str() << std::endl;
-            }
-
-            // ∑Œƒ√ ªÛ≈¬ √ ±‚»≠
-            currentUserId = 0;
-            currentUsername.clear();
-            return true;
-        }
-        else {
-            std::cout << "? ∑Œ±◊æ∆øÙ Ω«∆–: " << packetManager.GetResultCodeName(logoutResponse->result()) << std::endl;
-            return false;
-        }
-    }
-
-    bool CreateAccount(const std::string& username, const std::string& password, const std::string& nickname) {
-        std::cout << "\n=== ∞Ë¡§ ª˝º∫ Ω√µµ ===" << std::endl;
-        std::cout << "ªÁøÎ¿⁄∏Ì: " << username << ", ¥–≥◊¿”: " << nickname << std::endl;
-
-        // 1. ∞Ë¡§ ª˝º∫ ø‰√ª ∆–≈∂ ª˝º∫
-        auto accountPacket = packetManager.CreateAccountRequest(username, password, nickname);
+        auto accountPacket = _packet_manager.CreateAccountRequest(username, password, nickname);
         if (accountPacket.empty()) {
-            std::cerr << "∞Ë¡§ ª˝º∫ ∆–≈∂ ª˝º∫ Ω«∆–: " << packetManager.GetLastError() << std::endl;
+            std::cerr << "Failed to create account packet: " << _packet_manager.GetLastError() << std::endl;
             return false;
         }
 
-        // 2. ∆–≈∂ ¿¸º€
         if (!SendPacket(accountPacket)) {
             return false;
         }
 
-        // 3. ¿¿¥‰ ºˆΩ≈
-        auto responseData = ReceivePacket();
-        if (responseData.empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
             return false;
         }
 
-        // 4. ¿¿¥‰ ∆ƒΩÃ
-        const S2C_CreateAccount* accountResponse = packetManager.ParseCreateAccountResponse(responseData.data(), responseData.size());
+        const S2C_CreateAccount* accountResponse = _packet_manager.ParseCreateAccountResponse(response.data(), response.size());
         if (!accountResponse) {
-            std::cerr << "∞Ë¡§ ª˝º∫ ¿¿¥‰ ∆ƒΩÃ Ω«∆–: " << packetManager.GetLastError() << std::endl;
+            std::cerr << "Failed to parse create account response: " << _packet_manager.GetLastError() << std::endl;
             return false;
         }
 
-        // 5. ∞·∞˙ »Æ¿Œ
-        if (packetManager.IsCreateAccountSuccess(accountResponse)) {
-            std::cout << "? ∞Ë¡§ ª˝º∫ º∫∞¯!" << std::endl;
-            std::cout << "   ªı ªÁøÎ¿⁄ ID: " << accountResponse->user_id() << std::endl;
-            std::cout << "   ∏ﬁΩ√¡ˆ: " << accountResponse->message()->c_str() << std::endl;
-            return true;
+        bool success = _packet_manager.IsCreateAccountSuccess(accountResponse);
+        if (success) {
+            std::cout << "[PASS] Create Account SUCCESS - User ID: " << accountResponse->user_id()
+                << ", Message: " << accountResponse->message()->str() << std::endl;
         }
         else {
-            std::cout << "? ∞Ë¡§ ª˝º∫ Ω«∆–: " << accountResponse->message()->c_str() << std::endl;
-            return false;
+            std::cout << "[FAIL] Create Account FAILED - Result: " << static_cast<int>(accountResponse->result())
+                << ", Message: " << accountResponse->message()->str() << std::endl;
         }
+
+        return success;
     }
 
-    bool GetItemData() {
-        if (currentUserId == 0) {
-            std::cerr << "? ∑Œ±◊¿Œ¿Ã « ø‰«’¥œ¥Ÿ!" << std::endl;
+    bool TestPlayerDataQuery() {
+        std::cout << "\n=== Player Data Query Test ===" << std::endl;
+
+        if (_current_user_id == 0) {
+            std::cerr << "[FAIL] No logged in user" << std::endl;
             return false;
         }
 
-        std::cout << "\n=== ¿¸√º æ∆¿Ã≈€ µ•¿Ã≈Õ ¡∂»∏ ===" << std::endl;
-        std::cout << "ªÁøÎ¿⁄ ID: " << currentUserId << std::endl;
+        auto playerPacket = _packet_manager.CreatePlayerDataQueryRequest(_current_user_id);
+        if (playerPacket.empty()) {
+            std::cerr << "Failed to create player data query packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
 
-        // 1. æ∆¿Ã≈€ µ•¿Ã≈Õ ø‰√ª ∆–≈∂ ª˝º∫ (request_type = 0: ¡∂»∏)
-        auto itemPacket = packetManager.CreateItemDataRequest(currentUserId, 0, 0, 0);
+        if (!SendPacket(playerPacket)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
+            return false;
+        }
+
+        const S2C_PlayerData* playerResponse = _packet_manager.ParsePlayerDataResponse(response.data(), response.size());
+        if (!playerResponse) {
+            std::cerr << "Failed to parse player data response: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        bool success = _packet_manager.IsPlayerDataValid(playerResponse);
+        if (success) {
+            std::cout << "[PASS] Player Data Query SUCCESS:" << std::endl;
+            std::cout << "  User ID: " << playerResponse->user_id() << std::endl;
+            std::cout << "  Username: " << playerResponse->username()->str() << std::endl;
+            std::cout << "  Nickname: " << playerResponse->nickname()->str() << std::endl;
+            std::cout << "  Level: " << playerResponse->level() << std::endl;
+            std::cout << "  Exp: " << playerResponse->exp() << std::endl;
+            std::cout << "  HP: " << playerResponse->hp() << std::endl;
+            std::cout << "  MP: " << playerResponse->mp() << std::endl;
+            std::cout << "  Attack: " << playerResponse->attack() << std::endl;
+            std::cout << "  Defense: " << playerResponse->defense() << std::endl;
+            std::cout << "  Gold: " << playerResponse->gold() << std::endl;
+            std::cout << "  Map ID: " << playerResponse->map_id() << std::endl;
+            std::cout << "  Position: (" << playerResponse->pos_x() << ", " << playerResponse->pos_y() << ")" << std::endl;
+        }
+        else {
+            std::cout << "[FAIL] Player Data Query FAILED - Result: " << static_cast<int>(playerResponse->result()) << std::endl;
+        }
+
+        return success;
+    }
+
+    bool TestPlayerDataUpdate() {
+        std::cout << "\n=== Player Data Update Test ===" << std::endl;
+
+        if (_current_user_id == 0) {
+            std::cerr << "[FAIL] No logged in user" << std::endl;
+            return false;
+        }
+
+        auto updatePacket = _packet_manager.CreatePlayerDataUpdateRequest(_current_user_id, 2, 150, 120, 60, 10.5f, 20.3f);
+        if (updatePacket.empty()) {
+            std::cerr << "Failed to create player data update packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (!SendPacket(updatePacket)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
+            return false;
+        }
+
+        const S2C_PlayerData* updateResponse = _packet_manager.ParsePlayerDataResponse(response.data(), response.size());
+        if (!updateResponse) {
+            std::cerr << "Failed to parse player data update response: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        bool success = _packet_manager.IsPlayerDataValid(updateResponse);
+        if (success) {
+            std::cout << "[PASS] Player Data Update SUCCESS" << std::endl;
+        }
+        else {
+            std::cout << "[FAIL] Player Data Update FAILED - Result: " << static_cast<int>(updateResponse->result()) << std::endl;
+        }
+
+        return success;
+    }
+
+    bool TestItemDataQuery() {
+        std::cout << "\n=== Item Data Query Test ===" << std::endl;
+
+        if (_current_user_id == 0) {
+            std::cerr << "[FAIL] No logged in user" << std::endl;
+            return false;
+        }
+
+        auto itemPacket = _packet_manager.CreateItemDataRequest(_current_user_id, 0);
         if (itemPacket.empty()) {
-            std::cerr << "æ∆¿Ã≈€ µ•¿Ã≈Õ ∆–≈∂ ª˝º∫ Ω«∆–: " << packetManager.GetLastError() << std::endl;
+            std::cerr << "Failed to create item data query packet: " << _packet_manager.GetLastError() << std::endl;
             return false;
         }
 
-        // 2. ∆–≈∂ ¿¸º€
         if (!SendPacket(itemPacket)) {
             return false;
         }
 
-        // 3. ¿¿¥‰ ºˆΩ≈
-        auto responseData = ReceivePacket();
-        if (responseData.empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
             return false;
         }
 
-        // 4. ¿¿¥‰ ∆ƒΩÃ
-        const S2C_ItemData* itemResponse = packetManager.ParseItemDataResponse(responseData.data(), responseData.size());
+        const S2C_ItemData* itemResponse = _packet_manager.ParseItemDataResponse(response.data(), response.size());
         if (!itemResponse) {
-            std::cerr << "æ∆¿Ã≈€ µ•¿Ã≈Õ ¿¿¥‰ ∆ƒΩÃ Ω«∆–: " << packetManager.GetLastError() << std::endl;
+            std::cerr << "Failed to parse item data response: " << _packet_manager.GetLastError() << std::endl;
             return false;
         }
 
-        // 5. ∞·∞˙ »Æ¿Œ π◊ √‚∑¬
-        if (packetManager.IsItemDataValid(itemResponse)) {
-            std::cout << "? æ∆¿Ã≈€ µ•¿Ã≈Õ ¡∂»∏ º∫∞¯!" << std::endl;
-            std::cout << "?? ∫∏¿Ø ∞ÒµÂ: " << itemResponse->gold() << std::endl;
+        bool success = _packet_manager.IsItemDataValid(itemResponse);
+        if (success) {
+            std::cout << "[PASS] Item Data Query SUCCESS:" << std::endl;
+            std::cout << "  User ID: " << itemResponse->user_id() << std::endl;
+            std::cout << "  Gold: " << itemResponse->gold() << std::endl;
+            std::cout << "  Items:" << std::endl;
 
-            if (itemResponse->items() && itemResponse->items()->size() > 0) {
-                std::cout << "?? ∫∏¿Ø æ∆¿Ã≈€ ∏Ò∑œ:" << std::endl;
-                std::cout << "¶£¶°¶°¶°¶°¶°¶°¶®¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶®¶°¶°¶°¶°¶°¶°¶®¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶§" << std::endl;
-                std::cout << "¶¢ ID   ¶¢ æ∆¿Ã≈€∏Ì       ¶¢ ºˆ∑Æ ¶¢ ≈∏¿‘         ¶¢" << std::endl;
-                std::cout << "¶ß¶°¶°¶°¶°¶°¶°¶´¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶´¶°¶°¶°¶°¶°¶°¶´¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶©" << std::endl;
-
+            if (itemResponse->items()) {
                 for (size_t i = 0; i < itemResponse->items()->size(); ++i) {
-                    const ItemData* item = itemResponse->items()->Get(i);
-                    if (item) {
-                        std::string typeStr;
-                        switch (item->item_type()) {
-                        case 0: typeStr = "π´±‚"; break;
-                        case 1: typeStr = "πÊæÓ±∏"; break;
-                        case 2: typeStr = "º“∫Ò«∞"; break;
-                        default: typeStr = "±‚≈∏"; break;
-                        }
-
-                        printf("¶¢ %-4d ¶¢ %-14s ¶¢ %-4d ¶¢ %-12s ¶¢\n",
-                            item->item_id(),
-                            item->item_name()->c_str(),
-                            item->item_count(),
-                            typeStr.c_str());
-                    }
-                }
-                std::cout << "¶¶¶°¶°¶°¶°¶°¶°¶™¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶™¶°¶°¶°¶°¶°¶°¶™¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶•" << std::endl;
-
-                // √π π¯¬∞ æ∆¿Ã≈€ ªÛºº ¡§∫∏ √‚∑¬
-                const ItemData* firstItem = itemResponse->items()->Get(0);
-                if (firstItem) {
-                    std::cout << "\n?? [√π π¯¬∞ æ∆¿Ã≈€ ªÛºº ¡§∫∏]" << std::endl;
-                    std::cout << "   ?? æ∆¿Ã≈€ ID: " << firstItem->item_id() << std::endl;
-                    std::cout << "   ?? æ∆¿Ã≈€∏Ì: " << firstItem->item_name()->c_str() << std::endl;
-                    std::cout << "   ?? ºˆ∑Æ: " << firstItem->item_count() << std::endl;
-                    std::cout << "   ???  ≈∏¿‘: " << firstItem->item_type() << " (";
-                    switch (firstItem->item_type()) {
-                    case 0: std::cout << "π´±‚"; break;
-                    case 1: std::cout << "πÊæÓ±∏"; break;
-                    case 2: std::cout << "º“∫Ò«∞"; break;
-                    default: std::cout << "±‚≈∏"; break;
-                    }
-                    std::cout << ")" << std::endl;
+                    const auto* item = itemResponse->items()->Get(i);
+                    std::cout << "    - ID: " << item->item_id()
+                        << ", Name: " << item->item_name()->str()
+                        << ", Count: " << item->item_count()
+                        << ", Type: " << item->item_type()
+                        << ", Price: " << item->base_price() << std::endl;
                 }
             }
-            else {
-                std::cout << "?? ∫∏¿Ø«— æ∆¿Ã≈€¿Ã æ¯Ω¿¥œ¥Ÿ." << std::endl;
+        }
+        else {
+            std::cout << "[FAIL] Item Data Query FAILED - Result: " << static_cast<int>(itemResponse->result()) << std::endl;
+        }
+
+        return success;
+    }
+
+    bool TestMonsterDataQuery() {
+        std::cout << "\n=== Monster Data Query Test ===" << std::endl;
+
+        auto monsterPacket = _packet_manager.CreateMonsterDataRequest(0);
+        if (monsterPacket.empty()) {
+            std::cerr << "Failed to create monster data query packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (!SendPacket(monsterPacket)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
+            return false;
+        }
+
+        const S2C_MonsterData* monsterResponse = _packet_manager.ParseMonsterDataResponse(response.data(), response.size());
+        if (!monsterResponse) {
+            std::cerr << "Failed to parse monster data response: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (monsterResponse->result() == ResultCode_SUCCESS) {
+            std::cout << "[PASS] Monster Data Query SUCCESS:" << std::endl;
+
+            if (monsterResponse->monsters()) {
+                for (size_t i = 0; i < monsterResponse->monsters()->size(); ++i) {
+                    const auto* monster = monsterResponse->monsters()->Get(i);
+                    std::cout << "  - ID: " << monster->monster_id()
+                        << ", Name: " << monster->monster_name()->str()
+                        << ", Level: " << monster->level()
+                        << ", HP: " << monster->hp()
+                        << ", Attack: " << monster->attack()
+                        << ", Defense: " << monster->defense()
+                        << ", Exp Reward: " << monster->exp_reward()
+                        << ", Gold Reward: " << monster->gold_reward() << std::endl;
+                }
             }
             return true;
         }
         else {
-            std::cout << "? æ∆¿Ã≈€ µ•¿Ã≈Õ ¡∂»∏ Ω«∆–: " << packetManager.GetResultCodeName(itemResponse->result()) << std::endl;
+            std::cout << "[FAIL] Monster Data Query FAILED - Result: " << static_cast<int>(monsterResponse->result()) << std::endl;
             return false;
         }
     }
 
-    bool GetSpecificItemInfo() {
-        if (currentUserId == 0) {
-            std::cerr << "? ∑Œ±◊¿Œ¿Ã « ø‰«’¥œ¥Ÿ!" << std::endl;
+    bool TestChatSend(uint32_t senderId, uint32_t receiverId, const std::string& message, uint32_t chatType) {
+        auto chatPacket = _packet_manager.CreateChatSendRequest(senderId, receiverId, message, chatType);
+        if (chatPacket.empty()) {
+            std::cerr << "Failed to create chat send packet: " << _packet_manager.GetLastError() << std::endl;
             return false;
         }
 
-        uint32_t itemId;
-        std::cout << "\n=== ∆Ø¡§ æ∆¿Ã≈€ ¡§∫∏ ¡∂»∏ ===" << std::endl;
-        std::cout << "¡∂»∏«“ æ∆¿Ã≈€ ID∏¶ ¿‘∑¬«œººø‰: ";
-        std::cin >> itemId;
-
-        if (itemId == 0) {
-            std::cerr << "? ¿ﬂ∏¯µ» æ∆¿Ã≈€ ID¿‘¥œ¥Ÿ." << std::endl;
+        if (!SendPacket(chatPacket)) {
             return false;
         }
 
-        std::cout << "æ∆¿Ã≈€ ID " << itemId << " ¡§∫∏∏¶ ¡∂»∏«’¥œ¥Ÿ..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        // 1. ¿¸√º æ∆¿Ã≈€ ∏Ò∑œ¿ª ¡∂»∏«— »ƒ ∆Ø¡§ æ∆¿Ã≈€ √£±‚
-        auto itemPacket = packetManager.CreateItemDataRequest(currentUserId, 0, 0, 0);
-        if (itemPacket.empty()) {
-            std::cerr << "? æ∆¿Ã≈€ µ•¿Ã≈Õ ∆–≈∂ ª˝º∫ Ω«∆–: " << packetManager.GetLastError() << std::endl;
+        auto response = ReceivePacket();
+        if (response.empty()) {
             return false;
         }
 
-        // 2. ∆–≈∂ ¿¸º€
-        if (!SendPacket(itemPacket)) {
+        const S2C_PlayerChat* chatResponse = _packet_manager.ParsePlayerChatResponse(response.data(), response.size());
+        if (!chatResponse) {
+            std::cerr << "Failed to parse chat response: " << _packet_manager.GetLastError() << std::endl;
             return false;
         }
 
-        // 3. ¿¿¥‰ ºˆΩ≈
-        auto responseData = ReceivePacket();
-        if (responseData.empty()) {
-            return false;
-        }
-
-        // 4. ¿¿¥‰ ∆ƒΩÃ
-        const S2C_ItemData* itemResponse = packetManager.ParseItemDataResponse(responseData.data(), responseData.size());
-        if (!itemResponse) {
-            std::cerr << "? æ∆¿Ã≈€ µ•¿Ã≈Õ ¿¿¥‰ ∆ƒΩÃ Ω«∆–: " << packetManager.GetLastError() << std::endl;
-            return false;
-        }
-
-        // 5. ∆Ø¡§ æ∆¿Ã≈€ √£±‚
-        if (packetManager.IsItemDataValid(itemResponse)) {
-            if (itemResponse->items() && itemResponse->items()->size() > 0) {
-                const ItemData* targetItem = nullptr;
-
-                // ¿‘∑¬«— IDøÕ ¿œƒ°«œ¥¬ æ∆¿Ã≈€ √£±‚
-                for (size_t i = 0; i < itemResponse->items()->size(); ++i) {
-                    const ItemData* item = itemResponse->items()->Get(i);
-                    if (item && item->item_id() == itemId) {
-                        targetItem = item;
-                        break;
-                    }
-                }
-
-                if (targetItem) {
-                    std::cout << "? æ∆¿Ã≈€¿ª √£æ“Ω¿¥œ¥Ÿ!" << std::endl;
-                    std::cout << "¶£¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶§" << std::endl;
-                    std::cout << "¶¢           æ∆¿Ã≈€ ªÛºº ¡§∫∏          ¶¢" << std::endl;
-                    std::cout << "¶ß¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶©" << std::endl;
-                    printf("¶¢ ?? æ∆¿Ã≈€ ID: %-21d ¶¢\n", targetItem->item_id());
-                    printf("¶¢ ?? æ∆¿Ã≈€∏Ì: %-23s ¶¢\n", targetItem->item_name()->c_str());
-                    printf("¶¢ ?? ∫∏¿Ø ºˆ∑Æ: %-22d ¶¢\n", targetItem->item_count());
-                    printf("¶¢ ???  æ∆¿Ã≈€ ≈∏¿‘: %-19d ¶¢\n", targetItem->item_type());
-                    std::cout << "¶¢ ???  ≈∏¿‘ º≥∏Ì: ";
-                    switch (targetItem->item_type()) {
-                    case 0: std::cout << "π´±‚                     ¶¢" << std::endl; break;
-                    case 1: std::cout << "πÊæÓ±∏                   ¶¢" << std::endl; break;
-                    case 2: std::cout << "º“∫Ò«∞                   ¶¢" << std::endl; break;
-                    default: std::cout << "±‚≈∏                     ¶¢" << std::endl; break;
-                    }
-                    std::cout << "¶¶¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶•" << std::endl;
-
-                    // æ∆¿Ã≈€ ªÁøÎ ∞°¥… ø©∫Œ µÓ √ﬂ∞° ¡§∫∏
-                    std::cout << "\n?? [√ﬂ∞° ¡§∫∏]" << std::endl;
-                    std::cout << "   ?? «ˆ¿Á ∫∏¿Ø ∞ÒµÂ: " << itemResponse->gold() << std::endl;
-
-                    if (targetItem->item_count() > 0) {
-                        std::cout << "   ? ªÁøÎ ∞°¥…«— æ∆¿Ã≈€¿‘¥œ¥Ÿ." << std::endl;
-                    }
-                    else {
-                        std::cout << "   ? ∫∏¿Ø«œ¡ˆ æ ¿∫ æ∆¿Ã≈€¿‘¥œ¥Ÿ." << std::endl;
-                    }
-
-                    return true;
-                }
-                else {
-                    std::cout << "? «ÿ¥Á ID(" << itemId << ")¿« æ∆¿Ã≈€¿ª ∫∏¿Ø«œ∞Ì ¿÷¡ˆ æ Ω¿¥œ¥Ÿ." << std::endl;
-
-                    // ∫∏¿Ø ¡ﬂ¿Œ æ∆¿Ã≈€ ID ∏Ò∑œ «•Ω√
-                    std::cout << "\n?? «ˆ¿Á ∫∏¿Ø ¡ﬂ¿Œ æ∆¿Ã≈€ ID ∏Ò∑œ:" << std::endl;
-                    for (size_t i = 0; i < itemResponse->items()->size(); ++i) {
-                        const ItemData* item = itemResponse->items()->Get(i);
-                        if (item) {
-                            std::cout << "   ? ID " << item->item_id()
-                                << ": " << item->item_name()->c_str() << std::endl;
-                        }
-                    }
-                    return false;
-                }
-            }
-            else {
-                std::cout << "? ∫∏¿Ø«— æ∆¿Ã≈€¿Ã æ¯Ω¿¥œ¥Ÿ." << std::endl;
-                return false;
-            }
+        if (chatResponse->result() == ResultCode_SUCCESS) {
+            std::cout << "[PASS] Chat Send SUCCESS" << std::endl;
+            return true;
         }
         else {
-            std::cout << "? æ∆¿Ã≈€ µ•¿Ã≈Õ ¡∂»∏ Ω«∆–: " << packetManager.GetResultCodeName(itemResponse->result()) << std::endl;
+            std::cout << "[FAIL] Chat Send FAILED - Result: " << static_cast<int>(chatResponse->result()) << std::endl;
             return false;
         }
     }
 
-    void ShowCurrentStatus() {
-        std::cout << "\n¶£¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶§" << std::endl;
-        std::cout << "¶¢             «ˆ¿Á ªÛ≈¬               ¶¢" << std::endl;
-        std::cout << "¶ß¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶©" << std::endl;
-        if (currentUserId > 0) {
-            std::cout << "¶¢ ?? ∑Œ±◊¿Œ ªÛ≈¬: ¡¢º” ¡ﬂ            ¶¢" << std::endl;
-            printf("¶¢ ?? ªÁøÎ¿⁄∏Ì: %-22s ¶¢\n", currentUsername.c_str());
-            printf("¶¢ ?? ªÁøÎ¿⁄ ID: %-21d ¶¢\n", currentUserId);
+    bool TestShopList() {
+        std::cout << "\n=== Shop List Test ===" << std::endl;
+
+        auto shopPacket = _packet_manager.CreateShopListRequest(0, 0);
+        if (shopPacket.empty()) {
+            std::cerr << "Failed to create shop list packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (!SendPacket(shopPacket)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
+            return false;
+        }
+
+        const S2C_ShopList* shopResponse = _packet_manager.ParseShopListResponse(response.data(), response.size());
+        if (!shopResponse) {
+            std::cerr << "Failed to parse shop list response: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        bool success = _packet_manager.IsShopListValid(shopResponse);
+        if (success) {
+            std::cout << "[PASS] Shop List Query SUCCESS:" << std::endl;
+
+            if (shopResponse->shops()) {
+                for (size_t i = 0; i < shopResponse->shops()->size(); ++i) {
+                    const auto* shop = shopResponse->shops()->Get(i);
+                    std::cout << "  - ID: " << shop->shop_id()
+                        << ", Name: " << shop->shop_name()->str()
+                        << ", Type: " << shop->shop_type()
+                        << ", Map ID: " << shop->map_id()
+                        << ", Position: (" << shop->pos_x() << ", " << shop->pos_y() << ")" << std::endl;
+                }
+            }
         }
         else {
-            std::cout << "¶¢ ?? ∑Œ±◊¿Œ ªÛ≈¬: ∑Œ±◊æ∆øÙ           ¶¢" << std::endl;
-            std::cout << "¶¢ ?? ªÁøÎ¿⁄∏Ì: æ¯¿Ω                  ¶¢" << std::endl;
-            std::cout << "¶¢ ?? ªÁøÎ¿⁄ ID: æ¯¿Ω                 ¶¢" << std::endl;
+            std::cout << "[FAIL] Shop List Query FAILED - Result: " << static_cast<int>(shopResponse->result()) << std::endl;
         }
-        std::cout << "¶¢ ?? º≠πˆ ø¨∞·: " << (isConnected ? "ø¨∞·µ              ¶¢" : "ø¨∞· æ»µ          ¶¢") << std::endl;
-        std::cout << "¶¶¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶•" << std::endl;
+
+        return success;
+    }
+
+    bool TestShopItems() {
+        std::cout << "\n=== Shop Items Test ===" << std::endl;
+
+        auto shopItemsPacket = _packet_manager.CreateShopItemsRequest(1);
+        if (shopItemsPacket.empty()) {
+            std::cerr << "Failed to create shop items packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (!SendPacket(shopItemsPacket)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
+            return false;
+        }
+
+        const S2C_ShopItems* shopItemsResponse = _packet_manager.ParseShopItemsResponse(response.data(), response.size());
+        if (!shopItemsResponse) {
+            std::cerr << "Failed to parse shop items response: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        bool success = _packet_manager.IsShopItemsValid(shopItemsResponse);
+        if (success) {
+            std::cout << "[PASS] Shop Items Query SUCCESS for Shop ID " << shopItemsResponse->shop_id() << ":" << std::endl;
+
+            if (shopItemsResponse->items()) {
+                for (size_t i = 0; i < shopItemsResponse->items()->size(); ++i) {
+                    const auto* item = shopItemsResponse->items()->Get(i);
+                    std::cout << "  - ID: " << item->item_id()
+                        << ", Name: " << item->item_name()->str()
+                        << ", Type: " << item->item_type()
+                        << ", Price: " << item->base_price()
+                        << ", Attack: +" << item->attack_bonus()
+                        << ", Defense: +" << item->defense_bonus() << std::endl;
+                }
+            }
+        }
+        else {
+            std::cout << "[FAIL] Shop Items Query FAILED - Result: " << static_cast<int>(shopItemsResponse->result()) << std::endl;
+        }
+
+        return success;
+    }
+
+    bool TestShopTransaction() {
+        std::cout << "\n=== Shop Transaction Test ===" << std::endl;
+
+        if (_current_user_id == 0) {
+            std::cerr << "[FAIL] No logged in user" << std::endl;
+            return false;
+        }
+
+        auto transactionPacket = _packet_manager.CreateShopTransactionRequest(_current_user_id, 1, 1, 1, 0);
+        if (transactionPacket.empty()) {
+            std::cerr << "Failed to create shop transaction packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (!SendPacket(transactionPacket)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
+            return false;
+        }
+
+        const S2C_ShopTransaction* transactionResponse = _packet_manager.ParseShopTransactionResponse(response.data(), response.size());
+        if (!transactionResponse) {
+            std::cerr << "Failed to parse shop transaction response: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        bool success = _packet_manager.IsShopTransactionSuccess(transactionResponse);
+        if (success) {
+            std::cout << "[PASS] Shop Transaction SUCCESS:" << std::endl;
+            std::cout << "  Message: " << transactionResponse->message()->str() << std::endl;
+            std::cout << "  Updated Gold: " << transactionResponse->updated_gold() << std::endl;
+        }
+        else {
+            std::cout << "[FAIL] Shop Transaction FAILED - Result: " << static_cast<int>(transactionResponse->result()) << std::endl;
+            std::cout << "  Message: " << transactionResponse->message()->str() << std::endl;
+        }
+
+        return success;
+    }
+
+    bool TestLogout() {
+        std::cout << "\n=== Logout Test ===" << std::endl;
+
+        if (_current_user_id == 0) {
+            std::cerr << "[FAIL] No logged in user" << std::endl;
+            return false;
+        }
+
+        auto logoutPacket = _packet_manager.CreateLogoutRequest(_current_user_id);
+        if (logoutPacket.empty()) {
+            std::cerr << "Failed to create logout packet: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (!SendPacket(logoutPacket)) {
+            return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        auto response = ReceivePacket();
+        if (response.empty()) {
+            return false;
+        }
+
+        const S2C_Logout* logoutResponse = _packet_manager.ParseLogoutResponse(response.data(), response.size());
+        if (!logoutResponse) {
+            std::cerr << "Failed to parse logout response: " << _packet_manager.GetLastError() << std::endl;
+            return false;
+        }
+
+        if (logoutResponse->result() == ResultCode_SUCCESS) {
+            std::cout << "[PASS] Logout SUCCESS - Message: " << logoutResponse->message()->str() << std::endl;
+            _current_user_id = 0;
+            _current_username.clear();
+            return true;
+        }
+        else {
+            std::cout << "[FAIL] Logout FAILED - Result: " << static_cast<int>(logoutResponse->result()) << std::endl;
+            return false;
+        }
     }
 
     void ShowMenu() {
-        std::cout << "\n¶£¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶§" << std::endl;
-        std::cout << "¶¢           ∞‘¿” ≈¨∂Û¿Ãæ∆Æ           ¶¢" << std::endl;
-        std::cout << "¶ß¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶©" << std::endl;
-        std::cout << "¶¢ 1. ∑Œ±◊¿Œ                           ¶¢" << std::endl;
-        std::cout << "¶¢ 2. ∑Œ±◊æ∆øÙ                         ¶¢" << std::endl;
-        std::cout << "¶¢ 3. ∞Ë¡§ ª˝º∫                        ¶¢" << std::endl;
-        std::cout << "¶¢ 4. ¿¸√º æ∆¿Ã≈€ µ•¿Ã≈Õ ¡∂»∏          ¶¢" << std::endl;
-        std::cout << "¶¢ 5. ∆Ø¡§ æ∆¿Ã≈€ ¡§∫∏ ¡∂»∏            ¶¢" << std::endl;
-        std::cout << "¶¢ 6. «ˆ¿Á ªÛ≈¬ »Æ¿Œ                   ¶¢" << std::endl;
-        std::cout << "¶¢ 0. ø¨∞· ¡æ∑·                        ¶¢" << std::endl;
-        std::cout << "¶¶¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶°¶•" << std::endl;
-        std::cout << "º±≈√ >> ";
+        std::cout << "\n========================================" << std::endl;
+        std::cout << "         Server Test Client Menu" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "0. Run All Tests (Auto Mode)" << std::endl;
+
+        for (const auto& pair : _test_functions) {
+            std::cout << pair.first << ". " << pair.second.first << std::endl;
+        }
+
+        std::cout << "90. Show Connection Status" << std::endl;
+        std::cout << "99. Exit" << std::endl;
+        std::cout << "========================================" << std::endl;
+
+        if (_current_user_id > 0) {
+            std::cout << "Current User: " << _current_username << " (ID: " << _current_user_id << ")" << std::endl;
+        }
+        else {
+            std::cout << "Current User: Not logged in" << std::endl;
+        }
+
+        std::cout << "Connection Status: " << (_connected ? "[CONNECTED]" : "[DISCONNECTED]") << std::endl;
+        std::cout << "Enter your choice: ";
     }
 
-    void Run() {
-        int choice;
-        std::string username, password, nickname;
+    void RunManualMode() {
+        std::cout << "\n[Manual Test Mode Started]" << std::endl;
 
-        std::cout << "\n?? ∞‘¿” ≈¨∂Û¿Ãæ∆Æø° ø¿Ω≈ ∞Õ¿ª »Øøµ«’¥œ¥Ÿ!" << std::endl;
-
-        while (isConnected) {
+        while (true) {
             ShowMenu();
 
-            if (!(std::cin >> choice)) {
+            int choice;
+            std::cin >> choice;
+            ClearInputBuffer(); // ÏûÖÎ†• Î≤ÑÌçº Ï†ïÎ¶¨
+
+            if (std::cin.fail()) {
                 std::cin.clear();
-                std::cin.ignore(10000, '\n');
-                std::cout << "? ¿ﬂ∏¯µ» ¿‘∑¬¿‘¥œ¥Ÿ. º˝¿⁄∏¶ ¿‘∑¬«œººø‰." << std::endl;
+                ClearInputBuffer();
+                std::cout << "[ERROR] Invalid input. Please enter a number." << std::endl;
                 continue;
             }
 
             switch (choice) {
-            case 1: // ∑Œ±◊¿Œ
-                if (currentUserId > 0) {
-                    std::cout << "??  ¿ÃπÃ ∑Œ±◊¿Œµ» ªÛ≈¬¿‘¥œ¥Ÿ. (ªÁøÎ¿⁄: " << currentUsername << ")" << std::endl;
-                }
-                else {
-                    std::cout << "\n?? ∑Œ±◊¿Œ ¡§∫∏∏¶ ¿‘∑¬«œººø‰." << std::endl;
-                    std::cout << "ªÁøÎ¿⁄∏Ì: ";
-                    std::cin >> username;
-                    std::cout << "∫Òπ–π¯»£: ";
-                    std::cin >> password;
-                    Login(username, password);
-                }
+            case 0:
+                RunAllTests();
                 break;
-
-            case 2: // ∑Œ±◊æ∆øÙ
-                if (currentUserId == 0) {
-                    std::cout << "??  ∑Œ±◊¿Œµ» ªÛ≈¬∞° æ∆¥’¥œ¥Ÿ." << std::endl;
-                }
-                else {
-                    Logout();
-                }
+            case 90:
+                ShowConnectionStatus();
                 break;
-
-            case 3: // ∞Ë¡§ ª˝º∫
-                std::cout << "\n?? ∞Ë¡§ ª˝º∫ ¡§∫∏∏¶ ¿‘∑¬«œººø‰." << std::endl;
-                std::cout << "ªÁøÎ¿⁄∏Ì: ";
-                std::cin >> username;
-                std::cout << "∫Òπ–π¯»£: ";
-                std::cin >> password;
-                std::cout << "¥–≥◊¿”: ";
-                std::cin >> nickname;
-                CreateAccount(username, password, nickname);
-                break;
-
-            case 4: // ¿¸√º æ∆¿Ã≈€ µ•¿Ã≈Õ ¡∂»∏
-                GetItemData();
-                break;
-
-            case 5: // ∆Ø¡§ æ∆¿Ã≈€ ¡§∫∏ ¡∂»∏
-                GetSpecificItemInfo();
-                break;
-
-            case 6: // «ˆ¿Á ªÛ≈¬ »Æ¿Œ
-                ShowCurrentStatus();
-                break;
-
-            case 0: // ø¨∞· ¡æ∑·
-                if (currentUserId > 0) {
-                    std::cout << "\n?? ∑Œ±◊æ∆øÙ »ƒ ¡æ∑·«’¥œ¥Ÿ..." << std::endl;
-                    Logout();
-                }
-                std::cout << "?? ≈¨∂Û¿Ãæ∆Æ∏¶ ¡æ∑·«’¥œ¥Ÿ." << std::endl;
+            case 99:
+                std::cout << "[INFO] Exiting test client..." << std::endl;
                 return;
-
             default:
-                std::cout << "? ¿ﬂ∏¯µ» º±≈√¿‘¥œ¥Ÿ. 0-6 ªÁ¿Ã¿« º˝¿⁄∏¶ ¿‘∑¬«œººø‰." << std::endl;
+                if (_test_functions.find(choice) != _test_functions.end()) {
+                    std::cout << "\n[RUNNING] " << _test_functions[choice].first << std::endl;
+                    bool result = _test_functions[choice].second();
+                    std::cout << "\n[RESULT] " << (result ? "[PASSED]" : "[FAILED]") << std::endl;
+                }
+                else {
+                    std::cout << "[ERROR] Invalid choice. Please try again." << std::endl;
+                }
                 break;
             }
 
-            // ∞·∞˙ »Æ¿Œ¿ª ¿ß«— ¿·Ω√ ¥Î±‚
-            std::cout << "\n∞Ëº”«œ∑¡∏È Enter ≈∞∏¶ ¥©∏£ººø‰...";
-            std::cin.ignore();
-            std::cin.get();
+            if (choice != 99) {
+                std::cout << "\nPress Enter to continue...";
+                std::cin.get();
+            }
         }
+    }
+
+    void ShowConnectionStatus() {
+        std::cout << "\n========================================" << std::endl;
+        std::cout << "         Connection Status" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "Server: " << _server_ip << ":" << _server_port << std::endl;
+        std::cout << "Status: " << (_connected ? "[CONNECTED]" : "[DISCONNECTED]") << std::endl;
+        std::cout << "Socket: " << (_client_socket != INVALID_SOCKET ? "Valid" : "Invalid") << std::endl;
+
+        std::cout << "Current User: ";
+        if (_current_user_id > 0) {
+            std::cout << _current_username << " (ID: " << _current_user_id << ")" << std::endl;
+        }
+        else {
+            std::cout << "Not logged in" << std::endl;
+        }
+        std::cout << "========================================" << std::endl;
+    }
+
+    void RunAllTests() {
+        std::cout << "\n[Auto Test Mode Started]" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "Starting Comprehensive Server Test" << std::endl;
+        std::cout << "Note: Login test will use default testuser/testpass" << std::endl;
+        std::cout << "========================================" << std::endl;
+
+        int totalTests = 0;
+        int passedTests = 0;
+        std::vector<std::pair<std::string, bool>> testResults;
+
+        // Í∏∞Ï°¥ Í≥ÑÏ†ïÏúºÎ°ú Î°úÍ∑∏Ïù∏ ÌÖåÏä§Ìä∏ (Í≥†Ï†ï Í≥ÑÏ†ï ÏÇ¨Ïö©)
+        totalTests++;
+        std::cout << "\n[TEST " << totalTests << "] Login with default account" << std::endl;
+        bool loginResult = TestLogin("testuser", "testpass");
+        testResults.push_back({ "Login Test", loginResult });
+        if (loginResult) {
+            passedTests++;
+        }
+        else {
+            std::cout << "[WARNING] Login test failed - some user-dependent tests will be skipped" << std::endl;
+        }
+
+        // ÏÇ¨Ïö©Ïûê Î°úÍ∑∏Ïù∏Ïù¥ ÌïÑÏöîÌïú ÌÖåÏä§Ìä∏Îì§
+        if (loginResult && _current_user_id > 0) {
+            // ÌîåÎ†àÏù¥Ïñ¥ Îç∞Ïù¥ÌÑ∞ Ï°∞Ìöå
+            totalTests++;
+            std::cout << "\n[TEST " << totalTests << "] Player Data Query" << std::endl;
+            bool playerQueryResult = TestPlayerDataQuery();
+            testResults.push_back({ "Player Data Query", playerQueryResult });
+            if (playerQueryResult) passedTests++;
+
+            // ÌîåÎ†àÏù¥Ïñ¥ Îç∞Ïù¥ÌÑ∞ ÏóÖÎç∞Ïù¥Ìä∏
+            totalTests++;
+            std::cout << "\n[TEST " << totalTests << "] Player Data Update" << std::endl;
+            bool playerUpdateResult = TestPlayerDataUpdate();
+            testResults.push_back({ "Player Data Update", playerUpdateResult });
+            if (playerUpdateResult) passedTests++;
+
+            // ÏïÑÏù¥ÌÖú Îç∞Ïù¥ÌÑ∞ Ï°∞Ìöå
+            totalTests++;
+            std::cout << "\n[TEST " << totalTests << "] Item Data Query" << std::endl;
+            bool itemQueryResult = TestItemDataQuery();
+            testResults.push_back({ "Item Data Query", itemQueryResult });
+            if (itemQueryResult) passedTests++;
+
+            // Ï±ÑÌåÖ Ï†ÑÏÜ° (Í≥†Ï†ï Î©îÏãúÏßÄ)
+            totalTests++;
+            std::cout << "\n[TEST " << totalTests << "] Chat Send" << std::endl;
+            bool chatResult = TestChatSend(_current_user_id, 0, "Auto test message", 0);
+            testResults.push_back({ "Chat Send", chatResult });
+            if (chatResult) passedTests++;
+
+            // ÏÉÅÏ†ê Ìä∏ÎûúÏû≠ÏÖò
+            totalTests++;
+            std::cout << "\n[TEST " << totalTests << "] Shop Transaction" << std::endl;
+            bool shopTransactionResult = TestShopTransaction();
+            testResults.push_back({ "Shop Transaction", shopTransactionResult });
+            if (shopTransactionResult) passedTests++;
+        }
+
+        // ÏÇ¨Ïö©Ïûê Î°úÍ∑∏Ïù∏ ÏóÜÏù¥ÎèÑ ÌÖåÏä§Ìä∏ Í∞ÄÎä•Ìïú Í∏∞Îä•Îì§
+
+        // Î™¨Ïä§ÌÑ∞ Îç∞Ïù¥ÌÑ∞ Ï°∞Ìöå
+        totalTests++;
+        std::cout << "\n[TEST " << totalTests << "] Monster Data Query" << std::endl;
+        bool monsterResult = TestMonsterDataQuery();
+        testResults.push_back({ "Monster Data Query", monsterResult });
+        if (monsterResult) passedTests++;
+
+        // ÏÉÅÏ†ê Î™©Î°ù Ï°∞Ìöå
+        totalTests++;
+        std::cout << "\n[TEST " << totalTests << "] Shop List Query" << std::endl;
+        bool shopListResult = TestShopList();
+        testResults.push_back({ "Shop List Query", shopListResult });
+        if (shopListResult) passedTests++;
+
+        // ÏÉÅÏ†ê ÏïÑÏù¥ÌÖú Ï°∞Ìöå
+        totalTests++;
+        std::cout << "\n[TEST " << totalTests << "] Shop Items Query" << std::endl;
+        bool shopItemsResult = TestShopItems();
+        testResults.push_back({ "Shop Items Query", shopItemsResult });
+        if (shopItemsResult) passedTests++;
+
+        // Î°úÍ∑∏ÏïÑÏõÉ (Î°úÍ∑∏Ïù∏Îêú ÏÉÅÌÉúÏóêÏÑúÎßå)
+        if (loginResult && _current_user_id > 0) {
+            totalTests++;
+            std::cout << "\n[TEST " << totalTests << "] Logout" << std::endl;
+            bool logoutResult = TestLogout();
+            testResults.push_back({ "Logout Test", logoutResult });
+            if (logoutResult) passedTests++;
+        }
+
+        // ÏÉÅÏÑ∏ Í≤∞Í≥º Ï∂úÎ†•
+        std::cout << "\n========================================" << std::endl;
+        std::cout << "           Detailed Test Results" << std::endl;
+        std::cout << "========================================" << std::endl;
+
+        for (size_t i = 0; i < testResults.size(); ++i) {
+            std::cout << std::setw(3) << (i + 1) << ". " << std::setw(25) << std::left
+                << testResults[i].first << " : "
+                << (testResults[i].second ? "[PASSED]" : "[FAILED]") << std::endl;
+        }
+
+        // ÏµúÏ¢Ö Í≤∞Í≥º ÏöîÏïΩ
+        std::cout << "\n========================================" << std::endl;
+        std::cout << "           Final Test Summary" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "Total Tests: " << totalTests << std::endl;
+        std::cout << "Passed: " << passedTests << " [PASS]" << std::endl;
+        std::cout << "Failed: " << (totalTests - passedTests) << " [FAIL]" << std::endl;
+        std::cout << "Success Rate: " << std::fixed << std::setprecision(1)
+            << (passedTests * 100.0 / totalTests) << "%" << std::endl;
+        std::cout << "========================================" << std::endl;
+
+        if (passedTests == totalTests) {
+            std::cout << "[SUCCESS] ALL TESTS PASSED! Server is working perfectly!" << std::endl;
+        }
+        else if (passedTests > totalTests * 0.8) {
+            std::cout << "[WARNING] MOSTLY SUCCESSFUL! Minor issues detected." << std::endl;
+        }
+        else {
+            std::cout << "[ERROR] MULTIPLE FAILURES! Please check server implementation." << std::endl;
+        }
+    }
+
+    void ShowStartupBanner() {
+        std::cout << "========================================" << std::endl;
+        std::cout << "     DB Server Test Client v2.0" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "Server: " << _server_ip << ":" << _server_port << std::endl;
+        std::cout << "Features:" << std::endl;
+        std::cout << "  [+] Interactive user input" << std::endl;
+        std::cout << "  [+] Connection loss handling" << std::endl;
+        std::cout << "  [+] Auto & Manual test modes" << std::endl;
+        std::cout << "  [+] Comprehensive testing" << std::endl;
+        std::cout << "========================================" << std::endl;
     }
 };
 
 int main() {
-    // ƒ‹º÷ √¢ ¡¶∏Ò º≥¡§
-    SetConsoleTitle(L"∞‘¿” ≈¨∂Û¿Ãæ∆Æ - Enhanced Version");
+    TestClient client;
 
-    std::cout << "??????????????????????????????????????????????????????????" << std::endl;
-    std::cout << "?                                                        ?" << std::endl;
-    std::cout << "?            ?? ∞‘¿” º≠πˆ ≈◊Ω∫∆Æ ≈¨∂Û¿Ãæ∆Æ ??            ?" << std::endl;
-    std::cout << "?                                                        ?" << std::endl;
-    std::cout << "?              Enhanced with Logout & Item Search       ?" << std::endl;
-    std::cout << "?                                                        ?" << std::endl;
-    std::cout << "??????????????????????????????????????????????????????????" << std::endl;
+    client.ShowStartupBanner();
 
-    GameClient client;
-
-    // º≠πˆø° ø¨∞·
-    std::cout << "\n?? º≠πˆø° ø¨∞· ¡ﬂ..." << std::endl;
-    if (!client.Connect("127.0.0.1", 7777)) {
-        std::cerr << "? º≠πˆ ø¨∞· Ω«∆–!" << std::endl;
-        std::cout << "\n¥Ÿ¿Ω ªÁ«◊¿ª »Æ¿Œ«ÿ¡÷ººø‰:" << std::endl;
-        std::cout << "? º≠πˆ∞° Ω««‡ ¡ﬂ¿Œ¡ˆ »Æ¿Œ" << std::endl;
-        std::cout << "? IP ¡÷º“øÕ ∆˜∆Æ∞° ¡§»Æ«—¡ˆ »Æ¿Œ (127.0.0.1:7777)" << std::endl;
-        std::cout << "? πÊ»≠∫Æ º≥¡§ »Æ¿Œ" << std::endl;
-
-        system("pause");
+    if (!client.Initialize()) {
+        std::cerr << "[ERROR] Failed to initialize client" << std::endl;
         return -1;
     }
 
-    std::cout << "º≠πˆ ø¨∞· º∫∞¯! ∏ﬁ¥∫∏¶ º±≈√«œººø‰." << std::endl;
+    if (!client.Connect()) {
+        std::cerr << "[ERROR] Failed to connect to server" << std::endl;
+        std::cout << "Please ensure the server is running and try again." << std::endl;
+        return -1;
+    }
+
+    // ÏÑúÎ≤Ñ Ï§ÄÎπÑ ÎåÄÍ∏∞
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    std::cout << "\nSelect test mode:" << std::endl;
+    std::cout << "1. Auto Mode (Run all tests automatically)" << std::endl;
+    std::cout << "2. Manual Mode (Interactive menu)" << std::endl;
+    std::cout << "Enter your choice (1 or 2): ";
+
+    int mode;
+    std::cin >> mode;
+    std::cin.ignore(); // ÏûÖÎ†• Î≤ÑÌçº Ï†ïÎ¶¨
 
     try {
-        // ≈¨∂Û¿Ãæ∆Æ Ω««‡
-        client.Run();
+        if (mode == 1) {
+            client.RunAllTests();
+        }
+        else {
+            client.RunManualMode();
+        }
     }
     catch (const std::exception& e) {
-        std::cerr << "? øπø‹ πﬂª˝: " << e.what() << std::endl;
+        std::cerr << "[ERROR] Test execution failed: " << e.what() << std::endl;
+        return -1;
     }
 
-    std::cout << "\n?? ∞‘¿” ≈¨∂Û¿Ãæ∆Æ∏¶ ¿ÃøÎ«ÿ ¡÷º≈º≠ ∞®ªÁ«’¥œ¥Ÿ!" << std::endl;
-    std::cout << "«¡∑Œ±◊∑•¿ª ¡æ∑·«’¥œ¥Ÿ..." << std::endl;
-    system("pause");
+    std::cout << "\n[INFO] Test client finished. Goodbye!" << std::endl;
     return 0;
 }

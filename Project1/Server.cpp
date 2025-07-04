@@ -28,6 +28,8 @@ Server::~Server()
 {
     Stop();
 
+    DisconnectAllUsers();
+    
     // 응답 처리 스레드 종료 대기
     if (_response_handler_thread && _response_handler_thread->joinable()) {
         _response_handler_thread->join();
@@ -186,7 +188,9 @@ void Server::Stop()
 {
     printf("Stopping server...\n");
     _is_running.store(false);
-
+    
+    DisconnectAllUsers();
+    
     // 서버 소켓 닫기 (accept 블로킹 해제)
     if (_server_sock != INVALID_SOCKET) {
         closesocket(_server_sock);
@@ -297,4 +301,12 @@ WorkerThread* Server::FindWorkerThreadBySocket(SOCKET clientSocket)
         }
     }
     return nullptr;
+}
+
+void Server::DisconnectAllUsers()
+{
+    if (_database_thread) {
+        std::cout << "[Server] 모든 사용자 연결 해제 처리 중..." << std::endl;
+        _database_thread->DisconnectAllUsers();
+    }
 }

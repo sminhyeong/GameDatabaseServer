@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <string>
 #include <memory>
 #include "Packet.h"
@@ -19,7 +19,7 @@ public:
     bool Init();
     bool Connect(std::string host, std::string userName, std::string pass, int port, std::string dbName);
 
-    // Äõ¸® ½ÇÇà ÇÔ¼öµé Ãß°¡
+    // ì¿¼ë¦¬ ì‹¤í–‰ í•¨ìˆ˜ë“¤ ì¶”ê°€
     bool ExecuteQuery(const std::string& query);
     MYSQL_RES* GetResult();
     void FreeResult(MYSQL_RES* result);
