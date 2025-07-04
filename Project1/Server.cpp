@@ -57,7 +57,23 @@ Server::~Server()
 void Server::SetNonBlocking(SOCKET sock)
 {
     u_long mode = 1;  // 1 for non-blocking, 0 for blocking
-    ioctlsocket(sock, FIONBIO, &mode);
+    int result = ioctlsocket(sock, FIONBIO, &mode);
+    if (result != 0) {
+        std::cerr << "[Server] Non-blocking 설정 실패: " << WSAGetLastError() << std::endl;
+    }
+
+    // 추가 소켓 옵션 설정
+    int keepAlive = 1;
+    setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, (char*)&keepAlive, sizeof(keepAlive));
+
+    // TCP_NODELAY 설정으로 지연 최소화
+    int noDelay = 1;
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char*)&noDelay, sizeof(noDelay));
+
+    // 수신/송신 버퍼 크기 증가
+    int bufferSize = 65536;
+    setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (char*)&bufferSize, sizeof(bufferSize));
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (char*)&bufferSize, sizeof(bufferSize));
 }
 
 void Server::Initialize(const char* ip, int port)

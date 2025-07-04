@@ -20,7 +20,7 @@ DatabaseThread::DatabaseThread(LockFreeQueue<Task>* InRecvQueue, LockFreeQueue<D
 	// 기본 연결 정보 설정
 	_host = "127.0.0.1";
 	_user = "root";
-	_password = "projectc";
+	_password = "1234";
 	_database = "gamedb";
 }
 
@@ -174,6 +174,42 @@ bool DatabaseThread::SetUserOnlineStatus(uint32_t user_id, bool is_online)
 	}
 }
 
+bool DatabaseThread::ForceLogoutExistingSession(uint32_t user_id)
+{
+	try {
+		std::cout << "[DatabaseThread] 기존 세션 강제 종료 처리: 사용자 ID " << user_id << std::endl;
+
+		// 단순히 DB에서 해당 사용자를 오프라인으로 설정
+		std::stringstream logoutQuery;
+		logoutQuery << "UPDATE user_sessions SET "
+			<< "is_online = FALSE, "
+			<< "client_socket = 0, "
+			<< "last_activity = NOW() "
+			<< "WHERE user_id = " << user_id << " AND is_online = TRUE";
+
+		if (_sql_connector->ExecuteQuery(logoutQuery.str())) {
+			int affected_rows = _sql_connector->GetAffectedRows();
+
+			if (affected_rows > 0) {
+				std::cout << "[DatabaseThread] 기존 세션 강제 종료 성공: " << affected_rows << "개 세션 처리" << std::endl;
+				return true;
+			}
+			else {
+				std::cout << "[DatabaseThread] 처리할 활성 세션 없음: 사용자 ID " << user_id << std::endl;
+				return true; // 이미 오프라인이므로 성공으로 처리
+			}
+		}
+		else {
+			std::cerr << "[DatabaseThread] 기존 세션 강제 종료 쿼리 실패" << std::endl;
+			return false;
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] 기존 세션 강제 종료 중 예외: " << e.what() << std::endl;
+		return false;
+	}
+}
+
 void DatabaseThread::DisconnectAllUsers()
 {
 	if (!CheckDBConnection()) return;
@@ -236,6 +272,10 @@ void DatabaseThread::Run()
 
 void DatabaseThread::ProcessTask(const Task& task)
 {
+	if (!task.query.empty() && task.query.find("FORCE_LOGOUT:") == 0) {
+		return;
+	}
+
 	if (task.flatbuffer_data.empty()) {
 		std::cerr << "[DatabaseThread] 빈 FlatBuffer 데이터" << std::endl;
 		return;
@@ -343,20 +383,31 @@ void DatabaseThread::HandleLoginRequest(const Task& task)
 
 	_sql_connector->FreeResult(result);
 
-	// 중복 로그인 체크
+	// 중복 로그인 시 기존 세션 강제 종료 + 새 로그인 차단
 	if (is_online) {
-		std::cout << "[DatabaseThread] 중복 로그인 차단: 사용자 ID " << user_id << std::endl;
-		SendErrorResponse(task, EventType_S2C_Login, ResultCode_FAIL);
+		std::cout << "[DatabaseThread] 중복 로그인 감지: 사용자 ID " << user_id << std::endl;
+		std::cout << "[DatabaseThread] → 기존 세션 강제 종료 처리" << std::endl;
+		std::cout << "[DatabaseThread] → 새 로그인 시도 차단" << std::endl;
+
+		// 기존 세션을 강제 종료
+		if (ForceLogoutExistingSession(user_id)) {
+			std::cout << "[DatabaseThread] 기존 세션 강제 종료 완료" << std::endl;
+		}
+		else {
+			std::cerr << "[DatabaseThread] 기존 세션 강제 종료 실패" << std::endl;
+		}
+
+		// 새 로그인 시도를 차단
+		auto responsePacket = _packet_manager->CreateLoginErrorResponse(
+			ResultCode_FAIL, task.client_socket);
+		SendResponse(task, responsePacket);
+
+		std::cout << "[DatabaseThread] 중복 로그인 차단 완료: " << loginReq->username()->c_str() << std::endl;
 		return;
 	}
 
-	// 온라인 상태로 설정
+	// 새로운 로그인 처리 (간소화됨)
 	if (SetUserOnlineStatus(user_id, true)) {
-		// 마지막 로그인 시간 업데이트
-		std::stringstream updateQuery;
-		updateQuery << "UPDATE users SET last_login = NOW() WHERE user_id = " << user_id;
-		_sql_connector->ExecuteQuery(updateQuery.str());
-
 		auto responsePacket = _packet_manager->CreateLoginResponse(
 			ResultCode_SUCCESS, user_id, loginReq->username()->str(), nickname, level, task.client_socket);
 		SendResponse(task, responsePacket);
@@ -371,30 +422,41 @@ void DatabaseThread::HandleLoginRequest(const Task& task)
 
 void DatabaseThread::HandleLogoutRequest(const Task& task)
 {
+	std::cout << "[DatabaseThread] =================== 로그아웃 요청 시작 ===================" << std::endl;
+
 	const C2S_Logout* logoutReq = _packet_manager->ParseLogoutRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
 
 	if (!logoutReq) {
+		std::cerr << "[DatabaseThread] 로그아웃 요청 파싱 실패" << std::endl;
 		SendErrorResponse(task, EventType_S2C_Logout, ResultCode_FAIL);
 		return;
 	}
 
 	uint32_t user_id = logoutReq->user_id();
 	std::cout << "[DatabaseThread] 로그아웃 요청 처리: 사용자 ID " << user_id << std::endl;
+	std::cout << "[DatabaseThread] 클라이언트 소켓: " << task.client_socket << std::endl;
 
 	// 사용자 오프라인 상태로 설정
-	SetUserOnlineStatus(user_id, false);
+	bool offline_result = SetUserOnlineStatus(user_id, false);
+	std::cout << "[DatabaseThread] 오프라인 상태 설정 결과: " << (offline_result ? "성공" : "실패") << std::endl;
 
-	// 로그아웃 시간 업데이트
-	std::stringstream updateQuery;
-	updateQuery << "UPDATE users SET last_logout = NOW() WHERE user_id = " << user_id;
-	_sql_connector->ExecuteQuery(updateQuery.str());
-
-	// 항상 성공 응답 (클라이언트 무한 대기 방지)
+	// 항상 성공 응답 생성
+	std::cout << "[DatabaseThread] 로그아웃 응답 패킷 생성 중..." << std::endl;
 	auto responsePacket = _packet_manager->CreateLogoutResponse(
 		ResultCode_SUCCESS, "로그아웃 완료", task.client_socket);
+
+	if (responsePacket.empty()) {
+		std::cerr << "[DatabaseThread] 로그아웃 응답 패킷 생성 실패!" << std::endl;
+		return;
+	}
+
+	std::cout << "[DatabaseThread] 로그아웃 응답 패킷 크기: " << responsePacket.size() << " bytes" << std::endl;
+
+	// 응답 전송
 	SendResponse(task, responsePacket);
 
 	std::cout << "[DatabaseThread] 로그아웃 처리 완료: 사용자 ID " << user_id << std::endl;
+	std::cout << "[DatabaseThread] =================== 로그아웃 요청 종료 ===================" << std::endl;
 }
 
 void DatabaseThread::HandleCreateAccountRequest(const Task& task)
