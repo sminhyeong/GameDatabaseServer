@@ -4,15 +4,16 @@
 #include <winSock2.h>
 #pragma comment(lib, "ws2_32.lib")
 
-// Task 타입 열거형
+// Task 타입 열거형 (CLIENT_DISCONNECTED 추가)
 enum class TaskType {
-    QUERY,      // SELECT 쿼리
-    UPDATE,     // UPDATE, INSERT, DELETE 쿼리
+    QUERY,      // SELECT 처리
+    UPDATE,     // UPDATE, INSERT, DELETE 처리
     INSERT,
-    ITEM_DELETE
+    ITEM_DELETE,
+    CLIENT_DISCONNECTED  // 클라이언트 연결 해제 알림 추가
 };
 
-// DB 응답 구조체
+// DB 응답 구조체 (기존과 동일)
 struct DBResponse {
     int task_id;
     SOCKET client_socket;
@@ -34,13 +35,13 @@ struct DBResponse {
     }
 };
 
-// DB 요청 구조체
+// DB 요청 구조체 (기존과 동일)
 struct Task {
     int id;
     SOCKET client_socket;
     int worker_thread_id;
     TaskType type;
-    std::string query;  // 직접 쿼리 문자열 (테스트용)
+    std::string query;  // 직접 처리 문자열 (테스트용)
     std::vector<uint8_t> flatbuffer_data;
 
     Task()
@@ -54,9 +55,15 @@ struct Task {
         flatbuffer_data.assign(data, data + size);
     }
 
-    // 간단한 쿼리 생성용 생성자
+    // 간단한 처리 생성용 생성자
     Task(SOCKET sock, int thread_id, TaskType t, const std::string& q)
         : id(0), client_socket(sock), worker_thread_id(thread_id),
         type(t), query(q) {
+    }
+
+    // 클라이언트 연결 해제용 생성자 추가
+    Task(SOCKET sock, TaskType disconnect_type)
+        : id(0), client_socket(sock), worker_thread_id(0),
+        type(disconnect_type) {
     }
 };

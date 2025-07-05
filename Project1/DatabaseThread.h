@@ -8,6 +8,7 @@
 #include <string>
 #include <chrono>
 #include <iostream>
+#include <cstdint>  // uintptr_t를 위해 추가
 
 // 전방 선언으로 헤더 중복 방지
 template<typename T>
@@ -63,11 +64,25 @@ private:
     void HandleShopItemsRequest(const Task& task);
     void HandleShopTransactionRequest(const Task& task);
 
+    // 게임 서버 관련 핸들러들
+    void HandleCreateGameServerRequest(const Task& task);
+    void HandleGameServerListRequest(const Task& task);
+    void HandleJoinGameServerRequest(const Task& task);
+    void HandleCloseGameServerRequest(const Task& task);
+    void HandleSavePlayerDataRequest(const Task& task);
+
+    // 클라이언트 연결 해제 처리 (Task 기반으로 변경)
+    void HandleClientDisconnected(const Task& task);
+
     // 세분화된 처리 함수들
     void CreateDefaultPlayerData(uint32_t user_id);
     void HandleItemModification(const Task& task, const C2S_ItemData* itemReq);
     void HandleShopPurchase(const Task& task, const C2S_ShopTransaction* transReq);
     void HandleShopSell(const Task& task, const C2S_ShopTransaction* transReq);
+
+    // 내부에서만 사용하는 소켓별 정리 함수들 (uintptr_t로 변경)
+    void CleanupGameServerBySocket(uintptr_t client_socket);
+    void CleanupUserSessionBySocket(uintptr_t client_socket);
 
     // 응답 전송 헬퍼 함수들
     void SendResponse(const Task& task, const std::vector<uint8_t>& responsePacket);
@@ -80,7 +95,7 @@ private:
     // 간소화된 세션 관리 함수들
     bool InitializeUserSessions();              // 서버 시작 시 세션 초기화
     bool SetUserOnlineStatus(uint32_t user_id, bool is_online);  // 온라인 상태 설정
-   
+
     bool ForceLogoutExistingSession(uint32_t user_id);
 
 public:

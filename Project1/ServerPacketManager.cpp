@@ -194,6 +194,81 @@ const C2S_ShopTransaction* ServerPacketManager::ParseShopTransactionRequest(cons
     return packet->packet_event_as_C2S_ShopTransaction();
 }
 
+const C2S_CreateGameServer* ServerPacketManager::ParseCreateGameServerRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_CreateGameServer) {
+        SetError("Invalid create game server request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_CreateGameServer();
+}
+
+const C2S_GameServerList* ServerPacketManager::ParseGameServerListRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_GameServerList) {
+        SetError("Invalid game server list request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_GameServerList();
+}
+
+const C2S_JoinGameServer* ServerPacketManager::ParseJoinGameServerRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_JoinGameServer) {
+        SetError("Invalid join game server request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_JoinGameServer();
+}
+
+const C2S_CloseGameServer* ServerPacketManager::ParseCloseGameServerRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_CloseGameServer) {
+        SetError("Invalid close game server request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_CloseGameServer();
+}
+
+const C2S_SavePlayerData* ServerPacketManager::ParseSavePlayerDataRequest(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_C2S_SavePlayerData) {
+        SetError("Invalid save player data request packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_C2S_SavePlayerData();
+}
+
 // === 서버 응답 패킷 생성 (S2C) ===
 
 std::vector<uint8_t> ServerPacketManager::CreateLoginResponse(ResultCode result, uint32_t user_id, const std::string& username, const std::string& nickname, uint32_t level, uint32_t client_socket)
@@ -441,6 +516,125 @@ std::vector<uint8_t> ServerPacketManager::CreateShopTransactionResponse(ResultCo
     }
     catch (const std::exception& e) {
         SetError("CreateShopTransactionResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateGameServerResponse(ResultCode result, uint32_t server_id, const std::string& message, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto messageOffset = builder.CreateString(message);
+        auto gameServerResponse = CreateS2C_CreateGameServer(builder, result, server_id, messageOffset);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_CreateGameServer, gameServerResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateGameServerResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateGameServerListResponse(ResultCode result, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        // 빈 서버 벡터로 기본 응답 생성
+        std::vector<flatbuffers::Offset<GameServerData>> servers;
+        auto serversVector = builder.CreateVector(servers);
+
+        auto gameServerListResponse = CreateS2C_GameServerList(builder, result, serversVector);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_GameServerList, gameServerListResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateGameServerListResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateJoinGameServerResponse(ResultCode result, const std::string& server_ip, uint32_t server_port, const std::string& message, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto serverIpOffset = builder.CreateString(server_ip);
+        auto messageOffset = builder.CreateString(message);
+        auto joinGameServerResponse = CreateS2C_JoinGameServer(builder, result, serverIpOffset, server_port, messageOffset);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_JoinGameServer, joinGameServerResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateJoinGameServerResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateCloseGameServerResponse(ResultCode result, const std::string& message, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto messageOffset = builder.CreateString(message);
+        auto closeGameServerResponse = CreateS2C_CloseGameServer(builder, result, messageOffset);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_CloseGameServer, closeGameServerResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateCloseGameServerResponse failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateSavePlayerDataResponse(ResultCode result, const std::string& message, uint32_t client_socket)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto messageOffset = builder.CreateString(message);
+        auto savePlayerDataResponse = CreateS2C_SavePlayerData(builder, result, messageOffset);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_SavePlayerData, savePlayerDataResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateSavePlayerDataResponse failed: " + std::string(e.what()));
         return std::vector<uint8_t>();
     }
 }
@@ -741,6 +935,57 @@ std::vector<uint8_t> ServerPacketManager::CreateShopItemsResponseFromDB(MYSQL_RE
     }
 }
 
+std::vector<uint8_t> ServerPacketManager::CreateGameServerListResponseFromDB(MYSQL_RES* result, uint32_t client_socket)
+{
+    if (!IsValidMySQLResult(result)) {
+        return CreateGameServerListResponse(ResultCode_FAIL, client_socket);
+    }
+
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        std::vector<flatbuffers::Offset<GameServerData>> servers;
+
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(result))) {
+            uint32_t server_id = GetUintFromRow(row, 0);
+            std::string server_name = GetStringFromRow(row, 1);
+            std::string server_ip = GetStringFromRow(row, 2);
+            uint32_t server_port = GetUintFromRow(row, 3);
+            uint32_t owner_user_id = GetUintFromRow(row, 4);
+            std::string owner_nickname = GetStringFromRow(row, 5);
+            uint32_t current_players = GetUintFromRow(row, 6);
+            uint32_t max_players = GetUintFromRow(row, 7);
+            bool has_password = GetStringFromRow(row, 8) != ""; // password가 비어있지 않으면 true
+
+            auto serverNameOffset = builder.CreateString(server_name);
+            auto serverIpOffset = builder.CreateString(server_ip);
+            auto ownerNicknameOffset = builder.CreateString(owner_nickname);
+
+            auto gameServerData = CreateGameServerData(builder, server_id, serverNameOffset,
+                serverIpOffset, server_port, owner_user_id, ownerNicknameOffset,
+                current_players, max_players, has_password);
+            servers.push_back(gameServerData);
+        }
+
+        auto serversVector = builder.CreateVector(servers);
+        auto gameServerListResponse = CreateS2C_GameServerList(builder, ResultCode_SUCCESS, serversVector);
+        auto packet = CreateDatabasePacket(builder, EventType_S2C_GameServerList, gameServerListResponse.Union(), client_socket);
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateGameServerListResponseFromDB failed: " + std::string(e.what()));
+        return CreateGameServerListResponse(ResultCode_FAIL, client_socket);
+    }
+}
+
 // === 간편한 에러 응답 생성 ===
 
 std::vector<uint8_t> ServerPacketManager::CreateLoginErrorResponse(ResultCode error_code, uint32_t client_socket)
@@ -778,6 +1023,31 @@ std::vector<uint8_t> ServerPacketManager::CreateShopTransactionErrorResponse(Res
     return CreateShopTransactionResponse(error_code, message, 0, client_socket);
 }
 
+std::vector<uint8_t> ServerPacketManager::CreateGameServerErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket)
+{
+    return CreateGameServerResponse(error_code, 0, message, client_socket);
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateGameServerListErrorResponse(ResultCode error_code, uint32_t client_socket)
+{
+    return CreateGameServerListResponse(error_code, client_socket);
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateJoinGameServerErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket)
+{
+    return CreateJoinGameServerResponse(error_code, "", 0, message, client_socket);
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateCloseGameServerErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket)
+{
+    return CreateCloseGameServerResponse(error_code, message, client_socket);
+}
+
+std::vector<uint8_t> ServerPacketManager::CreateSavePlayerDataErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket)
+{
+    return CreateSavePlayerDataResponse(error_code, message, client_socket);
+}
+
 std::vector<uint8_t> ServerPacketManager::CreateGenericErrorResponse(EventType response_type, ResultCode error_code, uint32_t client_socket)
 {
     switch (response_type) {
@@ -795,6 +1065,17 @@ std::vector<uint8_t> ServerPacketManager::CreateGenericErrorResponse(EventType r
         return CreateShopItemsErrorResponse(error_code, 0, client_socket);
     case EventType_S2C_ShopTransaction:
         return CreateShopTransactionErrorResponse(error_code, "Generic error", client_socket);
+        // 게임 서버 관련 추가
+    case EventType_S2C_CreateGameServer:
+        return CreateGameServerErrorResponse(error_code, "Generic error", client_socket);
+    case EventType_S2C_GameServerList:
+        return CreateGameServerListErrorResponse(error_code, client_socket);
+    case EventType_S2C_JoinGameServer:
+        return CreateJoinGameServerErrorResponse(error_code, "Generic error", client_socket);
+    case EventType_S2C_CloseGameServer:
+        return CreateCloseGameServerErrorResponse(error_code, "Generic error", client_socket);
+    case EventType_S2C_SavePlayerData:
+        return CreateSavePlayerDataErrorResponse(error_code, "Generic error", client_socket);
     default:
         SetError("Unsupported response type for generic error");
         return std::vector<uint8_t>();
@@ -994,6 +1275,123 @@ bool ServerPacketManager::ValidateShopTransactionRequest(const C2S_ShopTransacti
     return true;
 }
 
+bool ServerPacketManager::ValidateCreateGameServerRequest(const C2S_CreateGameServer* request)
+{
+    if (!request) {
+        SetError("Create game server request is null");
+        return false;
+    }
+
+    if (request->user_id() == 0) {
+        SetError("Invalid user ID");
+        return false;
+    }
+
+    if (!request->server_name() || request->server_name()->size() == 0) {
+        SetError("Server name is empty");
+        return false;
+    }
+
+    if (request->server_name()->size() > 100) {
+        SetError("Server name too long");
+        return false;
+    }
+
+    if (!request->server_ip() || request->server_ip()->size() == 0) {
+        SetError("Server IP is empty");
+        return false;
+    }
+
+    if (request->server_port() == 0 || request->server_port() > 65535) {
+        SetError("Invalid server port");
+        return false;
+    }
+
+    if (request->max_players() == 0 || request->max_players() > 100) {
+        SetError("Invalid max players count");
+        return false;
+    }
+
+    return true;
+}
+
+bool ServerPacketManager::ValidateGameServerListRequest(const C2S_GameServerList* request)
+{
+    if (!request) {
+        SetError("Game server list request is null");
+        return false;
+    }
+
+    // request_type: 0 = 전체조회
+    if (request->request_type() > 0) {
+        SetError("Invalid request type");
+        return false;
+    }
+
+    return true;
+}
+
+bool ServerPacketManager::ValidateJoinGameServerRequest(const C2S_JoinGameServer* request)
+{
+    if (!request) {
+        SetError("Join game server request is null");
+        return false;
+    }
+
+    if (request->user_id() == 0) {
+        SetError("Invalid user ID");
+        return false;
+    }
+
+    if (request->server_id() == 0) {
+        SetError("Invalid server ID");
+        return false;
+    }
+
+    return true;
+}
+
+bool ServerPacketManager::ValidateCloseGameServerRequest(const C2S_CloseGameServer* request)
+{
+    if (!request) {
+        SetError("Close game server request is null");
+        return false;
+    }
+
+    if (request->user_id() == 0) {
+        SetError("Invalid user ID");
+        return false;
+    }
+
+    if (request->server_id() == 0) {
+        SetError("Invalid server ID");
+        return false;
+    }
+
+    return true;
+}
+
+bool ServerPacketManager::ValidateSavePlayerDataRequest(const C2S_SavePlayerData* request)
+{
+    if (!request) {
+        SetError("Save player data request is null");
+        return false;
+    }
+
+    if (request->user_id() == 0) {
+        SetError("Invalid user ID");
+        return false;
+    }
+
+    // 레벨, 경험치 등의 유효성 검사
+    if (request->level() == 0 || request->level() > 1000) {
+        SetError("Invalid level");
+        return false;
+    }
+
+    return true;
+}
+
 // === 유틸리티 함수들 ===
 
 EventType ServerPacketManager::GetPacketType(const uint8_t* data, size_t size)
@@ -1044,6 +1442,16 @@ std::string ServerPacketManager::GetPacketTypeName(EventType packet_type)
     case EventType_S2C_ShopItems: return "S2C_ShopItems";
     case EventType_C2S_ShopTransaction: return "C2S_ShopTransaction";
     case EventType_S2C_ShopTransaction: return "S2C_ShopTransaction";
+    case EventType_C2S_CreateGameServer: return "C2S_CreateGameServer";
+    case EventType_S2C_CreateGameServer: return "S2C_CreateGameServer";
+    case EventType_C2S_GameServerList: return "C2S_GameServerList";
+    case EventType_S2C_GameServerList: return "S2C_GameServerList";
+    case EventType_C2S_JoinGameServer: return "C2S_JoinGameServer";
+    case EventType_S2C_JoinGameServer: return "S2C_JoinGameServer";
+    case EventType_C2S_CloseGameServer: return "C2S_CloseGameServer";
+    case EventType_S2C_CloseGameServer: return "S2C_CloseGameServer";
+    case EventType_C2S_SavePlayerData: return "C2S_SavePlayerData";
+    case EventType_S2C_SavePlayerData: return "S2C_SavePlayerData";
     default: return "Unknown";
     }
 }

@@ -4,7 +4,7 @@
 #include <string>
 #include <cstdint>
 
-// 전방 선언 (헤더 중복 방지)
+// 전방 선언 (중복 방지)
 struct DatabasePacket;
 struct S2C_Login;
 struct S2C_Logout;
@@ -16,6 +16,14 @@ struct S2C_PlayerChat;
 struct S2C_ShopList;
 struct S2C_ShopItems;
 struct S2C_ShopTransaction;
+
+// 게임 서버 관련 구조체 추가
+struct S2C_CreateGameServer;
+struct S2C_GameServerList;
+struct S2C_JoinGameServer;
+struct S2C_CloseGameServer;
+struct S2C_SavePlayerData;
+struct GameServerData;
 
 enum EventType : uint8_t;
 enum ResultCode : int8_t;
@@ -34,7 +42,7 @@ public:
     ClientPacketManager();
     ~ClientPacketManager();
 
-    // === 클라이언트 요청 패킷 생성 (C2S) ===
+    // === 기존 클라이언트 요청 패킷 생성 (C2S) ===
 
     // 로그인 요청
     std::vector<uint8_t> CreateLoginRequest(const std::string& username, const std::string& password);
@@ -73,7 +81,26 @@ public:
     // 상점 거래 요청 (구매/판매)
     std::vector<uint8_t> CreateShopTransactionRequest(uint32_t user_id, uint32_t shop_id, uint32_t item_id, uint32_t item_count, uint32_t transaction_type);
 
-    // === 서버 응답 패킷 파싱 (S2C) ===
+    // === 게임 서버 관련 클라이언트 요청 패킷 생성 (C2S) 추가 ===
+
+    // 게임 서버 생성 요청
+    std::vector<uint8_t> CreateGameServerRequest(uint32_t user_id, const std::string& server_name,
+        const std::string& server_password, const std::string& server_ip, uint32_t server_port, uint32_t max_players = 10);
+
+    // 게임 서버 목록 요청
+    std::vector<uint8_t> CreateGameServerListRequest(uint32_t request_type = 0);
+
+    // 게임 서버 접속 요청
+    std::vector<uint8_t> CreateJoinGameServerRequest(uint32_t user_id, uint32_t server_id, const std::string& server_password = "");
+
+    // 게임 서버 종료 요청 (서버 관리자만)
+    std::vector<uint8_t> CreateCloseGameServerRequest(uint32_t user_id, uint32_t server_id);
+
+    // 플레이어 데이터 저장 요청 (월드 퇴장시)
+    std::vector<uint8_t> CreateSavePlayerDataRequest(uint32_t user_id, uint32_t level, uint32_t exp,
+        uint32_t hp, uint32_t mp, uint32_t gold, float pos_x, float pos_y);
+
+    // === 기존 서버 응답 패킷 파싱 (S2C) ===
     // FlatBuffers 구조체 포인터를 직접 반환
 
     // 로그인 응답 파싱
@@ -106,6 +133,23 @@ public:
     // 상점 거래 응답 파싱
     const S2C_ShopTransaction* ParseShopTransactionResponse(const uint8_t* data, size_t size);
 
+    // === 게임 서버 관련 서버 응답 패킷 파싱 (S2C) 추가 ===
+
+    // 게임 서버 생성 응답 파싱
+    const S2C_CreateGameServer* ParseCreateGameServerResponse(const uint8_t* data, size_t size);
+
+    // 게임 서버 목록 응답 파싱
+    const S2C_GameServerList* ParseGameServerListResponse(const uint8_t* data, size_t size);
+
+    // 게임 서버 접속 응답 파싱
+    const S2C_JoinGameServer* ParseJoinGameServerResponse(const uint8_t* data, size_t size);
+
+    // 게임 서버 종료 응답 파싱
+    const S2C_CloseGameServer* ParseCloseGameServerResponse(const uint8_t* data, size_t size);
+
+    // 플레이어 데이터 저장 응답 파싱
+    const S2C_SavePlayerData* ParseSavePlayerDataResponse(const uint8_t* data, size_t size);
+
     // === 편의 함수들 ===
 
     // 로그인 결과 확인
@@ -129,6 +173,23 @@ public:
     // 상점 거래 성공 확인
     bool IsShopTransactionSuccess(const S2C_ShopTransaction* response);
 
+    // === 게임 서버 관련 편의 함수들 추가 ===
+
+    // 게임 서버 생성 성공 확인
+    bool IsCreateGameServerSuccess(const S2C_CreateGameServer* response);
+
+    // 게임 서버 목록 조회 성공 확인
+    bool IsGameServerListValid(const S2C_GameServerList* response);
+
+    // 게임 서버 접속 성공 확인
+    bool IsJoinGameServerSuccess(const S2C_JoinGameServer* response);
+
+    // 게임 서버 종료 성공 확인
+    bool IsCloseGameServerSuccess(const S2C_CloseGameServer* response);
+
+    // 플레이어 데이터 저장 성공 확인
+    bool IsSavePlayerDataSuccess(const S2C_SavePlayerData* response);
+
     // === 유틸리티 함수들 ===
 
     // 패킷 타입 확인 (EventType enum 반환)
@@ -140,10 +201,10 @@ public:
     // 패킷 검증
     bool IsValidPacket(const uint8_t* data, size_t size);
 
-    // 패킷 타입을 문자열로 반환 (디버깅용)
+    // 패킷 타입을 문자열로 변환 (디버깅용)
     std::string GetPacketTypeName(EventType packet_type);
 
-    // 결과 코드를 문자열로 반환 (디버깅용)
+    // 결과 코드를 문자열로 변환 (디버깅용)
     std::string GetResultCodeName(ResultCode result);
 
     // 에러 메시지 반환

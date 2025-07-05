@@ -531,6 +531,233 @@ bool ClientPacketManager::IsValidPacket(const uint8_t* data, size_t size)
     return VerifyPacket(data, size);
 }
 
+
+// === 게임 서버 관련 클라이언트 요청 패킷 생성 (C2S) ===
+
+std::vector<uint8_t> ClientPacketManager::CreateGameServerRequest(uint32_t user_id, const std::string& server_name,
+    const std::string& server_password, const std::string& server_ip, uint32_t server_port, uint32_t max_players)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto serverNameOffset = builder.CreateString(server_name);
+        auto serverPasswordOffset = builder.CreateString(server_password);
+        auto serverIpOffset = builder.CreateString(server_ip);
+
+        auto gameServerRequest = CreateC2S_CreateGameServer(builder, user_id, serverNameOffset,
+            serverPasswordOffset, serverIpOffset, server_port, max_players);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_CreateGameServer, gameServerRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateGameServerRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateGameServerListRequest(uint32_t request_type)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto gameServerListRequest = CreateC2S_GameServerList(builder, request_type);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_GameServerList, gameServerListRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateGameServerListRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateJoinGameServerRequest(uint32_t user_id, uint32_t server_id, const std::string& server_password)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto serverPasswordOffset = builder.CreateString(server_password);
+        auto joinGameServerRequest = CreateC2S_JoinGameServer(builder, user_id, server_id, serverPasswordOffset);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_JoinGameServer, joinGameServerRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateJoinGameServerRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateCloseGameServerRequest(uint32_t user_id, uint32_t server_id)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto closeGameServerRequest = CreateC2S_CloseGameServer(builder, user_id, server_id);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_CloseGameServer, closeGameServerRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateCloseGameServerRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+std::vector<uint8_t> ClientPacketManager::CreateSavePlayerDataRequest(uint32_t user_id, uint32_t level, uint32_t exp,
+    uint32_t hp, uint32_t mp, uint32_t gold, float pos_x, float pos_y)
+{
+    ClearError();
+    try {
+        flatbuffers::FlatBufferBuilder builder;
+
+        auto savePlayerDataRequest = CreateC2S_SavePlayerData(builder, user_id, level, exp, hp, mp, gold, pos_x, pos_y);
+        auto packet = CreateDatabasePacket(builder, EventType_C2S_SavePlayerData, savePlayerDataRequest.Union());
+
+        builder.Finish(packet);
+
+        uint8_t* bufferPointer = builder.GetBufferPointer();
+        size_t bufferSize = builder.GetSize();
+
+        return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
+    }
+    catch (const std::exception& e) {
+        SetError("CreateSavePlayerDataRequest failed: " + std::string(e.what()));
+        return std::vector<uint8_t>();
+    }
+}
+
+// === 게임 서버 관련 서버 응답 패킷 파싱 (S2C) ===
+
+const S2C_CreateGameServer* ClientPacketManager::ParseCreateGameServerResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_CreateGameServer) {
+        SetError("Invalid create game server response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_CreateGameServer();
+}
+
+const S2C_GameServerList* ClientPacketManager::ParseGameServerListResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_GameServerList) {
+        SetError("Invalid game server list response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_GameServerList();
+}
+
+const S2C_JoinGameServer* ClientPacketManager::ParseJoinGameServerResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_JoinGameServer) {
+        SetError("Invalid join game server response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_JoinGameServer();
+}
+
+const S2C_CloseGameServer* ClientPacketManager::ParseCloseGameServerResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_CloseGameServer) {
+        SetError("Invalid close game server response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_CloseGameServer();
+}
+
+const S2C_SavePlayerData* ClientPacketManager::ParseSavePlayerDataResponse(const uint8_t* data, size_t size)
+{
+    if (!VerifyPacket(data, size)) {
+        return nullptr;
+    }
+
+    const DatabasePacket* packet = GetDatabasePacket(data);
+    if (!packet || packet->packet_event_type() != EventType_S2C_SavePlayerData) {
+        SetError("Invalid save player data response packet");
+        return nullptr;
+    }
+
+    return packet->packet_event_as_S2C_SavePlayerData();
+}
+
+// === 게임 서버 관련 편의 함수들 ===
+
+bool ClientPacketManager::IsCreateGameServerSuccess(const S2C_CreateGameServer* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsGameServerListValid(const S2C_GameServerList* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsJoinGameServerSuccess(const S2C_JoinGameServer* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsCloseGameServerSuccess(const S2C_CloseGameServer* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+bool ClientPacketManager::IsSavePlayerDataSuccess(const S2C_SavePlayerData* response)
+{
+    return response && response->result() == ResultCode_SUCCESS;
+}
+
+// GetPacketTypeName에도 새로운 케이스들 추가
+
 std::string ClientPacketManager::GetPacketTypeName(EventType packet_type)
 {
     switch (packet_type) {
@@ -554,6 +781,16 @@ std::string ClientPacketManager::GetPacketTypeName(EventType packet_type)
     case EventType_S2C_ShopItems: return "S2C_ShopItems";
     case EventType_C2S_ShopTransaction: return "C2S_ShopTransaction";
     case EventType_S2C_ShopTransaction: return "S2C_ShopTransaction";
+    case EventType_C2S_CreateGameServer: return "C2S_CreateGameServer";
+    case EventType_S2C_CreateGameServer: return "S2C_CreateGameServer";
+    case EventType_C2S_GameServerList: return "C2S_GameServerList";
+    case EventType_S2C_GameServerList: return "S2C_GameServerList";
+    case EventType_C2S_JoinGameServer: return "C2S_JoinGameServer";
+    case EventType_S2C_JoinGameServer: return "S2C_JoinGameServer";
+    case EventType_C2S_CloseGameServer: return "C2S_CloseGameServer";
+    case EventType_S2C_CloseGameServer: return "S2C_CloseGameServer";
+    case EventType_C2S_SavePlayerData: return "C2S_SavePlayerData";
+    case EventType_S2C_SavePlayerData: return "S2C_SavePlayerData";
     default: return "Unknown";
     }
 }

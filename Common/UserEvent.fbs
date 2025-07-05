@@ -5,7 +5,12 @@ enum ResultCode : byte {
     USER_NOT_FOUND = 3,
     INSUFFICIENT_GOLD = 4,
     ITEM_NOT_FOUND = 5,
-    SHOP_NOT_FOUND = 6
+    SHOP_NOT_FOUND = 6,
+    SERVER_NAME_DUPLICATE = 7,
+    SERVER_NOT_FOUND = 8,
+    SERVER_PASSWORD_WRONG = 9,
+    SERVER_FULL = 10,
+    NOT_SERVER_OWNER = 11
 }
 
 // === LOGIN 관련 (수정됨: nickname 추가) ===
@@ -192,6 +197,94 @@ table C2S_PlayerChat {
     chat_type:uint32;
 }
 
+// 게임 서버 데이터 구조
+table GameServerData {
+    server_id:uint32;
+    server_name:string;
+    server_ip:string;
+    server_port:uint32;
+    owner_user_id:uint32;
+    owner_nickname:string;
+    current_players:uint32;
+    max_players:uint32;
+    has_password:bool;
+}
+
+// 게임 서버 생성 요청 (C2S)
+table C2S_CreateGameServer {
+    user_id:uint32;
+    server_name:string;
+    server_password:string;
+    server_ip:string;
+    server_port:uint32;
+    max_players:uint32;
+}
+
+// 게임 서버 생성 응답 (S2C)
+table S2C_CreateGameServer {
+    result:ResultCode;
+    server_id:uint32;
+    message:string;
+}
+
+// 게임 서버 리스트 요청 (C2S)
+table C2S_GameServerList {
+    request_type:uint32;  // 0:전체조회
+}
+
+// 게임 서버 리스트 응답 (S2C)
+table S2C_GameServerList {
+    result:ResultCode;
+    servers:[GameServerData];
+}
+
+// 게임 서버 접속 요청 (C2S)
+table C2S_JoinGameServer {
+    user_id:uint32;
+    server_id:uint32;
+    server_password:string;
+}
+
+// 게임 서버 접속 응답 (S2C)
+table S2C_JoinGameServer {
+    result:ResultCode;
+    server_ip:string;
+    server_port:uint32;
+    message:string;
+}
+
+// 게임 서버 종료 요청 (C2S)
+table C2S_CloseGameServer {
+    user_id:uint32;
+    server_id:uint32;
+}
+
+// 게임 서버 종료 응답 (S2C)
+table S2C_CloseGameServer {
+    result:ResultCode;
+    message:string;
+}
+
+// 플레이어 데이터 저장 요청 (월드 퇴장시)
+table C2S_SavePlayerData {
+    user_id:uint32;
+    level:uint32;
+    exp:uint32;
+    hp:uint32;
+    mp:uint32;
+    gold:uint32;
+    pos_x:float;
+    pos_y:float;
+    // 필요한 다른 데이터들...
+}
+
+// 플레이어 데이터 저장 응답
+table S2C_SavePlayerData {
+    result:ResultCode;
+    message:string;
+}
+
+
 // === 메인 패킷 구조 ===
 union EventType {
     S2C_Login,
@@ -213,7 +306,17 @@ union EventType {
     S2C_MonsterData,
     C2S_MonsterData,
     S2C_PlayerChat,
-    C2S_PlayerChat
+    C2S_PlayerChat,
+    S2C_CreateGameServer,
+    C2S_CreateGameServer,
+    S2C_GameServerList,
+    C2S_GameServerList,
+    S2C_JoinGameServer,
+    C2S_JoinGameServer,
+    S2C_CloseGameServer,
+    C2S_CloseGameServer,
+    S2C_SavePlayerData,
+    C2S_SavePlayerData
 }
 
 table DatabasePacket {

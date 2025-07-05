@@ -18,6 +18,13 @@ struct C2S_ShopList;
 struct C2S_ShopItems;
 struct C2S_ShopTransaction;
 
+// 게임 서버 관련 구조체 전방 선언 추가
+struct C2S_CreateGameServer;
+struct C2S_GameServerList;
+struct C2S_JoinGameServer;
+struct C2S_CloseGameServer;
+struct C2S_SavePlayerData;
+
 enum EventType : uint8_t;
 enum ResultCode : int8_t;
 
@@ -68,6 +75,23 @@ public:
     // 상점 거래 요청 파싱
     const C2S_ShopTransaction* ParseShopTransactionRequest(const uint8_t* data, size_t size);
 
+    // === 게임 서버 관련 클라이언트 요청 패킷 파싱 (C2S) 추가 ===
+
+    // 게임 서버 생성 요청 파싱
+    const C2S_CreateGameServer* ParseCreateGameServerRequest(const uint8_t* data, size_t size);
+
+    // 게임 서버 목록 요청 파싱
+    const C2S_GameServerList* ParseGameServerListRequest(const uint8_t* data, size_t size);
+
+    // 게임 서버 접속 요청 파싱
+    const C2S_JoinGameServer* ParseJoinGameServerRequest(const uint8_t* data, size_t size);
+
+    // 게임 서버 종료 요청 파싱
+    const C2S_CloseGameServer* ParseCloseGameServerRequest(const uint8_t* data, size_t size);
+
+    // 플레이어 데이터 저장 요청 파싱
+    const C2S_SavePlayerData* ParseSavePlayerDataRequest(const uint8_t* data, size_t size);
+
     // === 서버 응답 패킷 생성 (S2C) ===
 
     // 로그인 응답 생성
@@ -102,7 +126,24 @@ public:
     // 상점 거래 응답 생성
     std::vector<uint8_t> CreateShopTransactionResponse(ResultCode result, const std::string& message, uint32_t updated_gold, uint32_t client_socket = 0);
 
-    // === MySQL 결과에서 직접 응답 패킷 생성 (서버 전용) ===
+    // === 게임 서버 관련 서버 응답 패킷 생성 (S2C) 추가 ===
+
+    // 게임 서버 생성 응답 생성
+    std::vector<uint8_t> CreateGameServerResponse(ResultCode result, uint32_t server_id, const std::string& message, uint32_t client_socket = 0);
+
+    // 게임 서버 목록 응답 생성
+    std::vector<uint8_t> CreateGameServerListResponse(ResultCode result, uint32_t client_socket = 0);
+
+    // 게임 서버 접속 응답 생성
+    std::vector<uint8_t> CreateJoinGameServerResponse(ResultCode result, const std::string& server_ip, uint32_t server_port, const std::string& message, uint32_t client_socket = 0);
+
+    // 게임 서버 종료 응답 생성
+    std::vector<uint8_t> CreateCloseGameServerResponse(ResultCode result, const std::string& message, uint32_t client_socket = 0);
+
+    // 플레이어 데이터 저장 응답 생성
+    std::vector<uint8_t> CreateSavePlayerDataResponse(ResultCode result, const std::string& message, uint32_t client_socket = 0);
+
+    // === MySQL 결과에서 직접 응답 패킷 생성 (서버 내용) ===
 
     // MySQL 로그인 결과로 응답 패킷 생성
     std::vector<uint8_t> CreateLoginResponseFromDB(MYSQL_RES* result, const std::string& username, uint32_t client_socket = 0);
@@ -124,6 +165,11 @@ public:
 
     // MySQL 상점 아이템 결과로 응답 패킷 생성
     std::vector<uint8_t> CreateShopItemsResponseFromDB(MYSQL_RES* result, uint32_t shop_id, uint32_t client_socket = 0);
+
+    // === 게임 서버 관련 MySQL 결과에서 응답 패킷 생성 추가 ===
+
+    // MySQL 게임 서버 목록 결과로 응답 패킷 생성
+    std::vector<uint8_t> CreateGameServerListResponseFromDB(MYSQL_RES* result, uint32_t client_socket = 0);
 
     // === 간편한 에러 응답 생성 ===
 
@@ -147,6 +193,23 @@ public:
 
     // 상점 거래 실패 응답
     std::vector<uint8_t> CreateShopTransactionErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket = 0);
+
+    // === 게임 서버 관련 에러 응답 생성 추가 ===
+
+    // 게임 서버 생성 실패 응답
+    std::vector<uint8_t> CreateGameServerErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket = 0);
+
+    // 게임 서버 목록 실패 응답
+    std::vector<uint8_t> CreateGameServerListErrorResponse(ResultCode error_code, uint32_t client_socket = 0);
+
+    // 게임 서버 접속 실패 응답
+    std::vector<uint8_t> CreateJoinGameServerErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket = 0);
+
+    // 게임 서버 종료 실패 응답
+    std::vector<uint8_t> CreateCloseGameServerErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket = 0);
+
+    // 플레이어 데이터 저장 실패 응답
+    std::vector<uint8_t> CreateSavePlayerDataErrorResponse(ResultCode error_code, const std::string& message, uint32_t client_socket = 0);
 
     // 일반적인 에러 응답 생성
     std::vector<uint8_t> CreateGenericErrorResponse(EventType response_type, ResultCode error_code, uint32_t client_socket = 0);
@@ -188,6 +251,23 @@ public:
     // 상점 거래 요청 유효성 검사
     bool ValidateShopTransactionRequest(const C2S_ShopTransaction* request);
 
+    // === 게임 서버 관련 요청 검증 헬퍼 함수들 추가 ===
+
+    // 게임 서버 생성 요청 유효성 검사
+    bool ValidateCreateGameServerRequest(const C2S_CreateGameServer* request);
+
+    // 게임 서버 목록 요청 유효성 검사
+    bool ValidateGameServerListRequest(const C2S_GameServerList* request);
+
+    // 게임 서버 접속 요청 유효성 검사
+    bool ValidateJoinGameServerRequest(const C2S_JoinGameServer* request);
+
+    // 게임 서버 종료 요청 유효성 검사
+    bool ValidateCloseGameServerRequest(const C2S_CloseGameServer* request);
+
+    // 플레이어 데이터 저장 요청 유효성 검사
+    bool ValidateSavePlayerDataRequest(const C2S_SavePlayerData* request);
+
     // === 유틸리티 함수들 ===
 
     // 패킷 타입 확인 (EventType enum 반환)
@@ -199,10 +279,10 @@ public:
     // 패킷 검증
     bool IsValidPacket(const uint8_t* data, size_t size);
 
-    // 패킷 타입을 문자열로 반환 (디버깅용)
+    // 패킷 타입을 문자열로 변환 (디버깅용)
     std::string GetPacketTypeName(EventType packet_type);
 
-    // 결과 코드를 문자열로 반환 (디버깅용)
+    // 결과 코드를 문자열로 변환 (디버깅용)
     std::string GetResultCodeName(ResultCode result);
 
     // 에러 메시지 반환

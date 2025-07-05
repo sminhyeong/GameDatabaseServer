@@ -215,11 +215,23 @@ void DatabaseThread::DisconnectAllUsers()
 	if (!CheckDBConnection()) return;
 
 	try {
-		std::string query = "UPDATE user_sessions SET is_online = FALSE, client_socket = 0, last_activity = NOW()";
-		if (_sql_connector->ExecuteQuery(query)) {
-			int affected = _sql_connector->GetAffectedRows();
-			std::cout << "[DatabaseThread] 서버 종료 - " << affected << "명의 사용자를 오프라인으로 설정했습니다." << std::endl;
+		std::cout << "[DatabaseThread] 서버 종료 - 모든 사용자 및 게임 서버 정리 시작..." << std::endl;
+
+		// 모든 사용자를 오프라인으로 설정
+		std::string userQuery = "UPDATE user_sessions SET is_online = FALSE, client_socket = 0, last_activity = NOW()";
+		if (_sql_connector->ExecuteQuery(userQuery)) {
+			int affected_users = _sql_connector->GetAffectedRows();
+			std::cout << "[DatabaseThread] " << affected_users << "명의 사용자를 오프라인으로 설정했습니다." << std::endl;
 		}
+
+		// 모든 게임 서버를 비활성화
+		std::string serverQuery = "UPDATE game_servers SET is_active = FALSE WHERE is_active = TRUE";
+		if (_sql_connector->ExecuteQuery(serverQuery)) {
+			int affected_servers = _sql_connector->GetAffectedRows();
+			std::cout << "[DatabaseThread] " << affected_servers << "개의 게임 서버를 비활성화했습니다." << std::endl;
+		}
+
+		std::cout << "[DatabaseThread] 서버 종료 정리 완료" << std::endl;
 	}
 	catch (const std::exception& e) {
 		std::cerr << "[DatabaseThread] DisconnectAllUsers 예외: " << e.what() << std::endl;
@@ -272,6 +284,12 @@ void DatabaseThread::Run()
 
 void DatabaseThread::ProcessTask(const Task& task)
 {
+	// TaskType이 CLIENT_DISCONNECTED인 경우 처리
+	if (task.type == TaskType::CLIENT_DISCONNECTED) {
+		HandleClientDisconnected(task);
+		return;
+	}
+
 	if (!task.query.empty() && task.query.find("FORCE_LOGOUT:") == 0) {
 		return;
 	}
@@ -324,6 +342,22 @@ void DatabaseThread::ProcessTask(const Task& task)
 		break;
 	case EventType_C2S_ShopTransaction:
 		HandleShopTransactionRequest(task);
+		break;
+		// === 게임 서버 관련 케이스들 ===
+	case EventType_C2S_CreateGameServer:
+		HandleCreateGameServerRequest(task);
+		break;
+	case EventType_C2S_GameServerList:
+		HandleGameServerListRequest(task);
+		break;
+	case EventType_C2S_JoinGameServer:
+		HandleJoinGameServerRequest(task);
+		break;
+	case EventType_C2S_CloseGameServer:
+		HandleCloseGameServerRequest(task);
+		break;
+	case EventType_C2S_SavePlayerData:
+		HandleSavePlayerDataRequest(task);
 		break;
 	default:
 		std::cout << "[DatabaseThread] 처리되지 않은 패킷 타입: " << static_cast<int>(packetType) << std::endl;
@@ -820,6 +854,290 @@ void DatabaseThread::HandleShopTransactionRequest(const Task& task)
 	}
 }
 
+void DatabaseThread::HandleCreateGameServerRequest(const Task& task)
+{
+	const C2S_CreateGameServer* createReq = _packet_manager->ParseCreateGameServerRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!createReq || !_packet_manager->ValidateCreateGameServerRequest(createReq)) {
+		std::cerr << "[DatabaseThread] 게임 서버 생성 요청 검증 실패: " << _packet_manager->GetLastError() << std::endl;
+		SendErrorResponse(task, EventType_S2C_CreateGameServer, ResultCode_FAIL);
+		return;
+	}
+
+	std::cout << "[DatabaseThread] 게임 서버 생성 요청 처리: " << createReq->server_name()->c_str() << std::endl;
+
+	// 서버명 중복 체크와 생성을 한 번에 처리
+	std::stringstream query;
+	query << "INSERT INTO game_servers (server_name, server_password, server_ip, server_port, "
+		<< "owner_user_id, owner_nickname, owner_socket, max_players) "
+		<< "SELECT '" << createReq->server_name()->c_str() << "', '"
+		<< createReq->server_password()->c_str() << "', '"
+		<< createReq->server_ip()->c_str() << "', "
+		<< createReq->server_port() << ", "
+		<< createReq->user_id() << ", "
+		<< "(SELECT nickname FROM users WHERE user_id = " << createReq->user_id() << "), "
+		<< task.client_socket << ", "
+		<< createReq->max_players() << " "
+		<< "WHERE NOT EXISTS (SELECT 1 FROM game_servers WHERE server_name = '"
+		<< createReq->server_name()->c_str() << "' AND is_active = 1)";
+
+	if (_sql_connector->ExecuteQuery(query.str()) && _sql_connector->GetAffectedRows() > 0) {
+		// 생성된 server_id 가져오기
+		std::string getIdQuery = "SELECT LAST_INSERT_ID()";
+		if (_sql_connector->ExecuteQuery(getIdQuery)) {
+			MYSQL_RES* result = _sql_connector->GetResult();
+			if (result) {
+				MYSQL_ROW row = mysql_fetch_row(result);
+				if (row) {
+					uint32_t new_server_id = std::stoul(row[0]);
+					_sql_connector->FreeResult(result);
+
+					auto responsePacket = _packet_manager->CreateGameServerResponse(
+						ResultCode_SUCCESS, new_server_id, "게임 서버 생성 성공", task.client_socket);
+					SendResponse(task, responsePacket);
+
+					std::cout << "[DatabaseThread] 게임 서버 생성 성공: " << createReq->server_name()->c_str()
+						<< " (ID: " << new_server_id << ")" << std::endl;
+					return;
+				}
+				_sql_connector->FreeResult(result);
+			}
+		}
+	}
+
+	auto responsePacket = _packet_manager->CreateGameServerErrorResponse(
+		ResultCode_SERVER_NAME_DUPLICATE, "이미 존재하는 서버명이거나 서버 생성에 실패했습니다", task.client_socket);
+	SendResponse(task, responsePacket);
+}
+
+void DatabaseThread::HandleGameServerListRequest(const Task& task)
+{
+	const C2S_GameServerList* listReq = _packet_manager->ParseGameServerListRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!listReq || !_packet_manager->ValidateGameServerListRequest(listReq)) {
+		std::cerr << "[DatabaseThread] 게임 서버 목록 요청 검증 실패: " << _packet_manager->GetLastError() << std::endl;
+		SendErrorResponse(task, EventType_S2C_GameServerList, ResultCode_FAIL);
+		return;
+	}
+
+	std::cout << "[DatabaseThread] 게임 서버 목록 요청 처리" << std::endl;
+
+	// 활성화된 게임 서버 목록 조회
+	std::stringstream query;
+	query << "SELECT server_id, server_name, server_ip, server_port, owner_user_id, owner_nickname, "
+		<< "current_players, max_players, "
+		<< "CASE WHEN server_password = '' THEN 0 ELSE 1 END as has_password "
+		<< "FROM game_servers "
+		<< "WHERE is_active = 1 "
+		<< "ORDER BY created_at DESC";
+
+	if (_sql_connector->ExecuteQuery(query.str())) {
+		MYSQL_RES* result = _sql_connector->GetResult();
+		if (result) {
+			auto responsePacket = _packet_manager->CreateGameServerListResponseFromDB(result, task.client_socket);
+			SendResponse(task, responsePacket);
+			std::cout << "[DatabaseThread] 게임 서버 목록 전송 완료" << std::endl;
+			return;
+		}
+	}
+
+	SendErrorResponse(task, EventType_S2C_GameServerList, ResultCode_FAIL);
+}
+
+void DatabaseThread::HandleJoinGameServerRequest(const Task& task)
+{
+	const C2S_JoinGameServer* joinReq = _packet_manager->ParseJoinGameServerRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!joinReq || !_packet_manager->ValidateJoinGameServerRequest(joinReq)) {
+		std::cerr << "[DatabaseThread] 게임 서버 접속 요청 검증 실패: " << _packet_manager->GetLastError() << std::endl;
+		SendErrorResponse(task, EventType_S2C_JoinGameServer, ResultCode_FAIL);
+		return;
+	}
+
+	std::cout << "[DatabaseThread] 게임 서버 접속 요청 처리: 서버 ID " << joinReq->server_id() << std::endl;
+
+	// 게임 서버 정보 조회 및 검증
+	std::stringstream query;
+	query << "SELECT server_name, server_password, server_ip, server_port, current_players, max_players "
+		<< "FROM game_servers "
+		<< "WHERE server_id = " << joinReq->server_id()
+		<< " AND is_active = 1";
+
+	if (!_sql_connector->ExecuteQuery(query.str())) {
+		SendErrorResponse(task, EventType_S2C_JoinGameServer, ResultCode_FAIL);
+		return;
+	}
+
+	MYSQL_RES* result = _sql_connector->GetResult();
+	if (!result) {
+		SendErrorResponse(task, EventType_S2C_JoinGameServer, ResultCode_FAIL);
+		return;
+	}
+
+	MYSQL_ROW row = mysql_fetch_row(result);
+	if (!row) {
+		_sql_connector->FreeResult(result);
+		auto responsePacket = _packet_manager->CreateJoinGameServerErrorResponse(
+			ResultCode_SERVER_NOT_FOUND, "존재하지 않는 게임 서버입니다", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	std::string server_name = _packet_manager->GetStringFromRow(row, 0);
+	std::string server_password = _packet_manager->GetStringFromRow(row, 1);
+	std::string server_ip = _packet_manager->GetStringFromRow(row, 2);
+	uint32_t server_port = _packet_manager->GetUintFromRow(row, 3);
+	uint32_t current_players = _packet_manager->GetUintFromRow(row, 4);
+	uint32_t max_players = _packet_manager->GetUintFromRow(row, 5);
+
+	_sql_connector->FreeResult(result);
+
+	// 서버 정원 확인
+	if (current_players >= max_players) {
+		auto responsePacket = _packet_manager->CreateJoinGameServerErrorResponse(
+			ResultCode_SERVER_FULL, "서버가 가득 찼습니다", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	// 패스워드 확인
+	if (!server_password.empty() && server_password != joinReq->server_password()->str()) {
+		auto responsePacket = _packet_manager->CreateJoinGameServerErrorResponse(
+			ResultCode_SERVER_PASSWORD_WRONG, "서버 패스워드가 틀렸습니다", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	// 접속 성공 - 서버 IP/Port 전달
+	auto responsePacket = _packet_manager->CreateJoinGameServerResponse(
+		ResultCode_SUCCESS, server_ip, server_port, "서버 접속 정보", task.client_socket);
+	SendResponse(task, responsePacket);
+
+	std::cout << "[DatabaseThread] 게임 서버 접속 승인: " << server_name
+		<< " (" << server_ip << ":" << server_port << ")" << std::endl;
+}
+
+void DatabaseThread::HandleCloseGameServerRequest(const Task& task)
+{
+	const C2S_CloseGameServer* closeReq = _packet_manager->ParseCloseGameServerRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!closeReq || !_packet_manager->ValidateCloseGameServerRequest(closeReq)) {
+		std::cerr << "[DatabaseThread] 게임 서버 종료 요청 검증 실패: " << _packet_manager->GetLastError() << std::endl;
+		SendErrorResponse(task, EventType_S2C_CloseGameServer, ResultCode_FAIL);
+		return;
+	}
+
+	std::cout << "[DatabaseThread] 게임 서버 종료 요청 처리: 사용자 ID " << closeReq->user_id()
+		<< ", 서버 ID " << closeReq->server_id() << std::endl;
+
+	// 서버 소유자 확인 및 서버 비활성화
+	std::stringstream query;
+	query << "UPDATE game_servers SET is_active = 0 "
+		<< "WHERE server_id = " << closeReq->server_id()
+		<< " AND owner_user_id = " << closeReq->user_id()
+		<< " AND is_active = 1";
+
+	if (_sql_connector->ExecuteQuery(query.str()) && _sql_connector->GetAffectedRows() > 0) {
+		auto responsePacket = _packet_manager->CreateCloseGameServerResponse(
+			ResultCode_SUCCESS, "게임 서버가 종료되었습니다", task.client_socket);
+		SendResponse(task, responsePacket);
+
+		std::cout << "[DatabaseThread] 게임 서버 종료 완료: 서버 ID " << closeReq->server_id() << std::endl;
+	}
+	else {
+		// 서버를 찾을 수 없거나 소유자가 아님
+		auto responsePacket = _packet_manager->CreateCloseGameServerErrorResponse(
+			ResultCode_NOT_SERVER_OWNER, "서버 소유자가 아니거나 존재하지 않는 서버입니다", task.client_socket);
+		SendResponse(task, responsePacket);
+	}
+}
+
+void DatabaseThread::HandleSavePlayerDataRequest(const Task& task)
+{
+	const C2S_SavePlayerData* saveReq = _packet_manager->ParseSavePlayerDataRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
+
+	if (!saveReq || !_packet_manager->ValidateSavePlayerDataRequest(saveReq)) {
+		std::cerr << "[DatabaseThread] 플레이어 데이터 저장 요청 검증 실패: " << _packet_manager->GetLastError() << std::endl;
+		SendErrorResponse(task, EventType_S2C_SavePlayerData, ResultCode_FAIL);
+		return;
+	}
+
+	std::cout << "[DatabaseThread] 플레이어 데이터 저장 요청 처리: 사용자 ID " << saveReq->user_id() << std::endl;
+
+	// 플레이어 데이터 업데이트
+	std::stringstream query;
+	query << "UPDATE player_data SET "
+		<< "level = " << saveReq->level() << ", "
+		<< "exp = " << saveReq->exp() << ", "
+		<< "hp = " << saveReq->hp() << ", "
+		<< "mp = " << saveReq->mp() << ", "
+		<< "gold = " << saveReq->gold() << ", "
+		<< "pos_x = " << saveReq->pos_x() << ", "
+		<< "pos_y = " << saveReq->pos_y() << ", "
+		<< "updated_at = NOW() "
+		<< "WHERE user_id = " << saveReq->user_id();
+
+	if (_sql_connector->ExecuteQuery(query.str()) && _sql_connector->GetAffectedRows() > 0) {
+		auto responsePacket = _packet_manager->CreateSavePlayerDataResponse(
+			ResultCode_SUCCESS, "플레이어 데이터 저장 완료", task.client_socket);
+		SendResponse(task, responsePacket);
+
+		std::cout << "[DatabaseThread] 플레이어 데이터 저장 완료: 사용자 ID " << saveReq->user_id() << std::endl;
+	}
+	else {
+		auto responsePacket = _packet_manager->CreateSavePlayerDataErrorResponse(
+			ResultCode_USER_NOT_FOUND, "플레이어 데이터를 찾을 수 없습니다", task.client_socket);
+		SendResponse(task, responsePacket);
+	}
+}
+
+void DatabaseThread::HandleClientDisconnected(const Task& task)
+{
+	uintptr_t client_socket = static_cast<uintptr_t>(task.client_socket);  // SOCKET을 uintptr_t로 캐스팅
+
+	std::cout << "[DatabaseThread] 클라이언트 연결 해제 처리: 소켓 " << client_socket << std::endl;
+
+	if (!CheckDBConnection() && !ReconnectIfNeeded()) {
+		std::cerr << "[DatabaseThread] DB 연결 실패, 클라이언트 정리 스킵" << std::endl;
+		return;
+	}
+
+	// 게임 서버 정리
+	CleanupGameServerBySocket(client_socket);
+
+	// 사용자 세션 정리
+	CleanupUserSessionBySocket(client_socket);
+}
+
+void DatabaseThread::CleanupGameServerBySocket(uintptr_t client_socket)
+{
+	try {
+		std::cout << "[DatabaseThread] 소켓 " << client_socket << "의 게임 서버 정리 시작..." << std::endl;
+
+		// 해당 소켓으로 생성된 게임 서버들을 비활성화
+		std::stringstream query;
+		query << "UPDATE game_servers SET is_active = FALSE "
+			<< "WHERE owner_socket = " << client_socket << " AND is_active = TRUE";
+
+		if (_sql_connector->ExecuteQuery(query.str())) {
+			int affected_rows = _sql_connector->GetAffectedRows();
+			if (affected_rows > 0) {
+				std::cout << "[DatabaseThread] " << affected_rows << "개의 게임 서버를 비활성화했습니다. (소켓: "
+					<< client_socket << ")" << std::endl;
+			}
+			else {
+				std::cout << "[DatabaseThread] 소켓 " << client_socket << "에 연결된 활성 게임 서버 없음" << std::endl;
+			}
+		}
+		else {
+			std::cerr << "[DatabaseThread] 게임 서버 정리 쿼리 실패" << std::endl;
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] CleanupGameServerBySocket 예외: " << e.what() << std::endl;
+	}
+}
+
 void DatabaseThread::HandleShopPurchase(const Task& task, const C2S_ShopTransaction* transReq)
 {
 	// 아이템 가격과 플레이어 골드를 한 번에 조회
@@ -1029,5 +1347,38 @@ void DatabaseThread::ShowSessionDebugInfo()
 	}
 	catch (const std::exception& e) {
 		std::cerr << "[DatabaseThread] ShowSessionDebugInfo 예외: " << e.what() << std::endl;
+	}
+}
+
+
+void DatabaseThread::CleanupUserSessionBySocket(uintptr_t client_socket)
+{
+	try {
+		std::cout << "[DatabaseThread] 소켓 " << client_socket << "의 사용자 세션 정리 시작..." << std::endl;
+
+		// 해당 소켓의 사용자를 오프라인으로 설정
+		std::stringstream query;
+		query << "UPDATE user_sessions SET "
+			<< "is_online = FALSE, "
+			<< "client_socket = 0, "
+			<< "last_activity = NOW() "
+			<< "WHERE client_socket = " << client_socket << " AND is_online = TRUE";
+
+		if (_sql_connector->ExecuteQuery(query.str())) {
+			int affected_rows = _sql_connector->GetAffectedRows();
+			if (affected_rows > 0) {
+				std::cout << "[DatabaseThread] " << affected_rows << "명의 사용자를 오프라인으로 설정했습니다. (소켓: "
+					<< client_socket << ")" << std::endl;
+			}
+			else {
+				std::cout << "[DatabaseThread] 소켓 " << client_socket << "에 연결된 온라인 사용자 없음" << std::endl;
+			}
+		}
+		else {
+			std::cerr << "[DatabaseThread] 사용자 세션 정리 쿼리 실패" << std::endl;
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] CleanupUserSessionBySocket 예외: " << e.what() << std::endl;
 	}
 }

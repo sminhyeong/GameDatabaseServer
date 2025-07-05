@@ -105,6 +105,14 @@ void WorkerThread::RemoveSocketFromList(SOCKET target_socket)
 					if (next == nullptr) {
 						_tail.store(nullptr);
 					}
+
+					// === DatabaseThread에 연결 해제 알림 (Task 큐 사용) ===
+					if (_task_queue) {
+						Task disconnectTask(current->socket, TaskType::CLIENT_DISCONNECTED);
+						_task_queue->enqueue(disconnectTask);
+						std::cout << "[WorkerThread] 클라이언트 연결 해제 알림 전송: " << current->socket << std::endl;
+					}
+
 					closesocket(current->socket);
 					delete current;
 					_client_count.fetch_sub(1);
@@ -118,6 +126,14 @@ void WorkerThread::RemoveSocketFromList(SOCKET target_socket)
 					if (current == _tail.load()) {
 						_tail.store(prev);
 					}
+
+					// === DatabaseThread에 연결 해제 알림 (Task 큐 사용) ===
+					if (_task_queue) {
+						Task disconnectTask(current->socket, TaskType::CLIENT_DISCONNECTED);
+						_task_queue->enqueue(disconnectTask);
+						std::cout << "[WorkerThread] 클라이언트 연결 해제 알림 전송: " << current->socket << std::endl;
+					}
+
 					closesocket(current->socket);
 					delete current;
 					_client_count.fetch_sub(1);

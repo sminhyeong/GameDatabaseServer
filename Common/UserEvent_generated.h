@@ -85,6 +85,39 @@ struct S2C_PlayerChatBuilder;
 struct C2S_PlayerChat;
 struct C2S_PlayerChatBuilder;
 
+struct GameServerData;
+struct GameServerDataBuilder;
+
+struct C2S_CreateGameServer;
+struct C2S_CreateGameServerBuilder;
+
+struct S2C_CreateGameServer;
+struct S2C_CreateGameServerBuilder;
+
+struct C2S_GameServerList;
+struct C2S_GameServerListBuilder;
+
+struct S2C_GameServerList;
+struct S2C_GameServerListBuilder;
+
+struct C2S_JoinGameServer;
+struct C2S_JoinGameServerBuilder;
+
+struct S2C_JoinGameServer;
+struct S2C_JoinGameServerBuilder;
+
+struct C2S_CloseGameServer;
+struct C2S_CloseGameServerBuilder;
+
+struct S2C_CloseGameServer;
+struct S2C_CloseGameServerBuilder;
+
+struct C2S_SavePlayerData;
+struct C2S_SavePlayerDataBuilder;
+
+struct S2C_SavePlayerData;
+struct S2C_SavePlayerDataBuilder;
+
 struct DatabasePacket;
 struct DatabasePacketBuilder;
 
@@ -96,11 +129,16 @@ enum ResultCode : int8_t {
   ResultCode_INSUFFICIENT_GOLD = 4,
   ResultCode_ITEM_NOT_FOUND = 5,
   ResultCode_SHOP_NOT_FOUND = 6,
+  ResultCode_SERVER_NAME_DUPLICATE = 7,
+  ResultCode_SERVER_NOT_FOUND = 8,
+  ResultCode_SERVER_PASSWORD_WRONG = 9,
+  ResultCode_SERVER_FULL = 10,
+  ResultCode_NOT_SERVER_OWNER = 11,
   ResultCode_MIN = ResultCode_SUCCESS,
-  ResultCode_MAX = ResultCode_SHOP_NOT_FOUND
+  ResultCode_MAX = ResultCode_NOT_SERVER_OWNER
 };
 
-inline const ResultCode (&EnumValuesResultCode())[7] {
+inline const ResultCode (&EnumValuesResultCode())[12] {
   static const ResultCode values[] = {
     ResultCode_SUCCESS,
     ResultCode_FAIL,
@@ -108,13 +146,18 @@ inline const ResultCode (&EnumValuesResultCode())[7] {
     ResultCode_USER_NOT_FOUND,
     ResultCode_INSUFFICIENT_GOLD,
     ResultCode_ITEM_NOT_FOUND,
-    ResultCode_SHOP_NOT_FOUND
+    ResultCode_SHOP_NOT_FOUND,
+    ResultCode_SERVER_NAME_DUPLICATE,
+    ResultCode_SERVER_NOT_FOUND,
+    ResultCode_SERVER_PASSWORD_WRONG,
+    ResultCode_SERVER_FULL,
+    ResultCode_NOT_SERVER_OWNER
   };
   return values;
 }
 
 inline const char * const *EnumNamesResultCode() {
-  static const char * const names[8] = {
+  static const char * const names[13] = {
     "SUCCESS",
     "FAIL",
     "INVALID_USER",
@@ -122,13 +165,18 @@ inline const char * const *EnumNamesResultCode() {
     "INSUFFICIENT_GOLD",
     "ITEM_NOT_FOUND",
     "SHOP_NOT_FOUND",
+    "SERVER_NAME_DUPLICATE",
+    "SERVER_NOT_FOUND",
+    "SERVER_PASSWORD_WRONG",
+    "SERVER_FULL",
+    "NOT_SERVER_OWNER",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameResultCode(ResultCode e) {
-  if (::flatbuffers::IsOutRange(e, ResultCode_SUCCESS, ResultCode_SHOP_NOT_FOUND)) return "";
+  if (::flatbuffers::IsOutRange(e, ResultCode_SUCCESS, ResultCode_NOT_SERVER_OWNER)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesResultCode()[index];
 }
@@ -155,11 +203,21 @@ enum EventType : uint8_t {
   EventType_C2S_MonsterData = 18,
   EventType_S2C_PlayerChat = 19,
   EventType_C2S_PlayerChat = 20,
+  EventType_S2C_CreateGameServer = 21,
+  EventType_C2S_CreateGameServer = 22,
+  EventType_S2C_GameServerList = 23,
+  EventType_C2S_GameServerList = 24,
+  EventType_S2C_JoinGameServer = 25,
+  EventType_C2S_JoinGameServer = 26,
+  EventType_S2C_CloseGameServer = 27,
+  EventType_C2S_CloseGameServer = 28,
+  EventType_S2C_SavePlayerData = 29,
+  EventType_C2S_SavePlayerData = 30,
   EventType_MIN = EventType_NONE,
-  EventType_MAX = EventType_C2S_PlayerChat
+  EventType_MAX = EventType_C2S_SavePlayerData
 };
 
-inline const EventType (&EnumValuesEventType())[21] {
+inline const EventType (&EnumValuesEventType())[31] {
   static const EventType values[] = {
     EventType_NONE,
     EventType_S2C_Login,
@@ -181,13 +239,23 @@ inline const EventType (&EnumValuesEventType())[21] {
     EventType_S2C_MonsterData,
     EventType_C2S_MonsterData,
     EventType_S2C_PlayerChat,
-    EventType_C2S_PlayerChat
+    EventType_C2S_PlayerChat,
+    EventType_S2C_CreateGameServer,
+    EventType_C2S_CreateGameServer,
+    EventType_S2C_GameServerList,
+    EventType_C2S_GameServerList,
+    EventType_S2C_JoinGameServer,
+    EventType_C2S_JoinGameServer,
+    EventType_S2C_CloseGameServer,
+    EventType_C2S_CloseGameServer,
+    EventType_S2C_SavePlayerData,
+    EventType_C2S_SavePlayerData
   };
   return values;
 }
 
 inline const char * const *EnumNamesEventType() {
-  static const char * const names[22] = {
+  static const char * const names[32] = {
     "NONE",
     "S2C_Login",
     "C2S_Login",
@@ -209,13 +277,23 @@ inline const char * const *EnumNamesEventType() {
     "C2S_MonsterData",
     "S2C_PlayerChat",
     "C2S_PlayerChat",
+    "S2C_CreateGameServer",
+    "C2S_CreateGameServer",
+    "S2C_GameServerList",
+    "C2S_GameServerList",
+    "S2C_JoinGameServer",
+    "C2S_JoinGameServer",
+    "S2C_CloseGameServer",
+    "C2S_CloseGameServer",
+    "S2C_SavePlayerData",
+    "C2S_SavePlayerData",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNameEventType(EventType e) {
-  if (::flatbuffers::IsOutRange(e, EventType_NONE, EventType_C2S_PlayerChat)) return "";
+  if (::flatbuffers::IsOutRange(e, EventType_NONE, EventType_C2S_SavePlayerData)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesEventType()[index];
 }
@@ -302,6 +380,46 @@ template<> struct EventTypeTraits<S2C_PlayerChat> {
 
 template<> struct EventTypeTraits<C2S_PlayerChat> {
   static const EventType enum_value = EventType_C2S_PlayerChat;
+};
+
+template<> struct EventTypeTraits<S2C_CreateGameServer> {
+  static const EventType enum_value = EventType_S2C_CreateGameServer;
+};
+
+template<> struct EventTypeTraits<C2S_CreateGameServer> {
+  static const EventType enum_value = EventType_C2S_CreateGameServer;
+};
+
+template<> struct EventTypeTraits<S2C_GameServerList> {
+  static const EventType enum_value = EventType_S2C_GameServerList;
+};
+
+template<> struct EventTypeTraits<C2S_GameServerList> {
+  static const EventType enum_value = EventType_C2S_GameServerList;
+};
+
+template<> struct EventTypeTraits<S2C_JoinGameServer> {
+  static const EventType enum_value = EventType_S2C_JoinGameServer;
+};
+
+template<> struct EventTypeTraits<C2S_JoinGameServer> {
+  static const EventType enum_value = EventType_C2S_JoinGameServer;
+};
+
+template<> struct EventTypeTraits<S2C_CloseGameServer> {
+  static const EventType enum_value = EventType_S2C_CloseGameServer;
+};
+
+template<> struct EventTypeTraits<C2S_CloseGameServer> {
+  static const EventType enum_value = EventType_C2S_CloseGameServer;
+};
+
+template<> struct EventTypeTraits<S2C_SavePlayerData> {
+  static const EventType enum_value = EventType_S2C_SavePlayerData;
+};
+
+template<> struct EventTypeTraits<C2S_SavePlayerData> {
+  static const EventType enum_value = EventType_C2S_SavePlayerData;
 };
 
 bool VerifyEventType(::flatbuffers::Verifier &verifier, const void *obj, EventType type);
@@ -2407,6 +2525,904 @@ inline ::flatbuffers::Offset<C2S_PlayerChat> CreateC2S_PlayerChatDirect(
       chat_type);
 }
 
+struct GameServerData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef GameServerDataBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SERVER_ID = 4,
+    VT_SERVER_NAME = 6,
+    VT_SERVER_IP = 8,
+    VT_SERVER_PORT = 10,
+    VT_OWNER_USER_ID = 12,
+    VT_OWNER_NICKNAME = 14,
+    VT_CURRENT_PLAYERS = 16,
+    VT_MAX_PLAYERS = 18,
+    VT_HAS_PASSWORD = 20
+  };
+  uint32_t server_id() const {
+    return GetField<uint32_t>(VT_SERVER_ID, 0);
+  }
+  const ::flatbuffers::String *server_name() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SERVER_NAME);
+  }
+  const ::flatbuffers::String *server_ip() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SERVER_IP);
+  }
+  uint32_t server_port() const {
+    return GetField<uint32_t>(VT_SERVER_PORT, 0);
+  }
+  uint32_t owner_user_id() const {
+    return GetField<uint32_t>(VT_OWNER_USER_ID, 0);
+  }
+  const ::flatbuffers::String *owner_nickname() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_OWNER_NICKNAME);
+  }
+  uint32_t current_players() const {
+    return GetField<uint32_t>(VT_CURRENT_PLAYERS, 0);
+  }
+  uint32_t max_players() const {
+    return GetField<uint32_t>(VT_MAX_PLAYERS, 0);
+  }
+  bool has_password() const {
+    return GetField<uint8_t>(VT_HAS_PASSWORD, 0) != 0;
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_SERVER_ID, 4) &&
+           VerifyOffset(verifier, VT_SERVER_NAME) &&
+           verifier.VerifyString(server_name()) &&
+           VerifyOffset(verifier, VT_SERVER_IP) &&
+           verifier.VerifyString(server_ip()) &&
+           VerifyField<uint32_t>(verifier, VT_SERVER_PORT, 4) &&
+           VerifyField<uint32_t>(verifier, VT_OWNER_USER_ID, 4) &&
+           VerifyOffset(verifier, VT_OWNER_NICKNAME) &&
+           verifier.VerifyString(owner_nickname()) &&
+           VerifyField<uint32_t>(verifier, VT_CURRENT_PLAYERS, 4) &&
+           VerifyField<uint32_t>(verifier, VT_MAX_PLAYERS, 4) &&
+           VerifyField<uint8_t>(verifier, VT_HAS_PASSWORD, 1) &&
+           verifier.EndTable();
+  }
+};
+
+struct GameServerDataBuilder {
+  typedef GameServerData Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_server_id(uint32_t server_id) {
+    fbb_.AddElement<uint32_t>(GameServerData::VT_SERVER_ID, server_id, 0);
+  }
+  void add_server_name(::flatbuffers::Offset<::flatbuffers::String> server_name) {
+    fbb_.AddOffset(GameServerData::VT_SERVER_NAME, server_name);
+  }
+  void add_server_ip(::flatbuffers::Offset<::flatbuffers::String> server_ip) {
+    fbb_.AddOffset(GameServerData::VT_SERVER_IP, server_ip);
+  }
+  void add_server_port(uint32_t server_port) {
+    fbb_.AddElement<uint32_t>(GameServerData::VT_SERVER_PORT, server_port, 0);
+  }
+  void add_owner_user_id(uint32_t owner_user_id) {
+    fbb_.AddElement<uint32_t>(GameServerData::VT_OWNER_USER_ID, owner_user_id, 0);
+  }
+  void add_owner_nickname(::flatbuffers::Offset<::flatbuffers::String> owner_nickname) {
+    fbb_.AddOffset(GameServerData::VT_OWNER_NICKNAME, owner_nickname);
+  }
+  void add_current_players(uint32_t current_players) {
+    fbb_.AddElement<uint32_t>(GameServerData::VT_CURRENT_PLAYERS, current_players, 0);
+  }
+  void add_max_players(uint32_t max_players) {
+    fbb_.AddElement<uint32_t>(GameServerData::VT_MAX_PLAYERS, max_players, 0);
+  }
+  void add_has_password(bool has_password) {
+    fbb_.AddElement<uint8_t>(GameServerData::VT_HAS_PASSWORD, static_cast<uint8_t>(has_password), 0);
+  }
+  explicit GameServerDataBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<GameServerData> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<GameServerData>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<GameServerData> CreateGameServerData(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t server_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> server_name = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> server_ip = 0,
+    uint32_t server_port = 0,
+    uint32_t owner_user_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> owner_nickname = 0,
+    uint32_t current_players = 0,
+    uint32_t max_players = 0,
+    bool has_password = false) {
+  GameServerDataBuilder builder_(_fbb);
+  builder_.add_max_players(max_players);
+  builder_.add_current_players(current_players);
+  builder_.add_owner_nickname(owner_nickname);
+  builder_.add_owner_user_id(owner_user_id);
+  builder_.add_server_port(server_port);
+  builder_.add_server_ip(server_ip);
+  builder_.add_server_name(server_name);
+  builder_.add_server_id(server_id);
+  builder_.add_has_password(has_password);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<GameServerData> CreateGameServerDataDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t server_id = 0,
+    const char *server_name = nullptr,
+    const char *server_ip = nullptr,
+    uint32_t server_port = 0,
+    uint32_t owner_user_id = 0,
+    const char *owner_nickname = nullptr,
+    uint32_t current_players = 0,
+    uint32_t max_players = 0,
+    bool has_password = false) {
+  auto server_name__ = server_name ? _fbb.CreateString(server_name) : 0;
+  auto server_ip__ = server_ip ? _fbb.CreateString(server_ip) : 0;
+  auto owner_nickname__ = owner_nickname ? _fbb.CreateString(owner_nickname) : 0;
+  return CreateGameServerData(
+      _fbb,
+      server_id,
+      server_name__,
+      server_ip__,
+      server_port,
+      owner_user_id,
+      owner_nickname__,
+      current_players,
+      max_players,
+      has_password);
+}
+
+struct C2S_CreateGameServer FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_CreateGameServerBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_USER_ID = 4,
+    VT_SERVER_NAME = 6,
+    VT_SERVER_PASSWORD = 8,
+    VT_SERVER_IP = 10,
+    VT_SERVER_PORT = 12,
+    VT_MAX_PLAYERS = 14
+  };
+  uint32_t user_id() const {
+    return GetField<uint32_t>(VT_USER_ID, 0);
+  }
+  const ::flatbuffers::String *server_name() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SERVER_NAME);
+  }
+  const ::flatbuffers::String *server_password() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SERVER_PASSWORD);
+  }
+  const ::flatbuffers::String *server_ip() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SERVER_IP);
+  }
+  uint32_t server_port() const {
+    return GetField<uint32_t>(VT_SERVER_PORT, 0);
+  }
+  uint32_t max_players() const {
+    return GetField<uint32_t>(VT_MAX_PLAYERS, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_USER_ID, 4) &&
+           VerifyOffset(verifier, VT_SERVER_NAME) &&
+           verifier.VerifyString(server_name()) &&
+           VerifyOffset(verifier, VT_SERVER_PASSWORD) &&
+           verifier.VerifyString(server_password()) &&
+           VerifyOffset(verifier, VT_SERVER_IP) &&
+           verifier.VerifyString(server_ip()) &&
+           VerifyField<uint32_t>(verifier, VT_SERVER_PORT, 4) &&
+           VerifyField<uint32_t>(verifier, VT_MAX_PLAYERS, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_CreateGameServerBuilder {
+  typedef C2S_CreateGameServer Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_user_id(uint32_t user_id) {
+    fbb_.AddElement<uint32_t>(C2S_CreateGameServer::VT_USER_ID, user_id, 0);
+  }
+  void add_server_name(::flatbuffers::Offset<::flatbuffers::String> server_name) {
+    fbb_.AddOffset(C2S_CreateGameServer::VT_SERVER_NAME, server_name);
+  }
+  void add_server_password(::flatbuffers::Offset<::flatbuffers::String> server_password) {
+    fbb_.AddOffset(C2S_CreateGameServer::VT_SERVER_PASSWORD, server_password);
+  }
+  void add_server_ip(::flatbuffers::Offset<::flatbuffers::String> server_ip) {
+    fbb_.AddOffset(C2S_CreateGameServer::VT_SERVER_IP, server_ip);
+  }
+  void add_server_port(uint32_t server_port) {
+    fbb_.AddElement<uint32_t>(C2S_CreateGameServer::VT_SERVER_PORT, server_port, 0);
+  }
+  void add_max_players(uint32_t max_players) {
+    fbb_.AddElement<uint32_t>(C2S_CreateGameServer::VT_MAX_PLAYERS, max_players, 0);
+  }
+  explicit C2S_CreateGameServerBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_CreateGameServer> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_CreateGameServer>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_CreateGameServer> CreateC2S_CreateGameServer(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t user_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> server_name = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> server_password = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> server_ip = 0,
+    uint32_t server_port = 0,
+    uint32_t max_players = 0) {
+  C2S_CreateGameServerBuilder builder_(_fbb);
+  builder_.add_max_players(max_players);
+  builder_.add_server_port(server_port);
+  builder_.add_server_ip(server_ip);
+  builder_.add_server_password(server_password);
+  builder_.add_server_name(server_name);
+  builder_.add_user_id(user_id);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<C2S_CreateGameServer> CreateC2S_CreateGameServerDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t user_id = 0,
+    const char *server_name = nullptr,
+    const char *server_password = nullptr,
+    const char *server_ip = nullptr,
+    uint32_t server_port = 0,
+    uint32_t max_players = 0) {
+  auto server_name__ = server_name ? _fbb.CreateString(server_name) : 0;
+  auto server_password__ = server_password ? _fbb.CreateString(server_password) : 0;
+  auto server_ip__ = server_ip ? _fbb.CreateString(server_ip) : 0;
+  return CreateC2S_CreateGameServer(
+      _fbb,
+      user_id,
+      server_name__,
+      server_password__,
+      server_ip__,
+      server_port,
+      max_players);
+}
+
+struct S2C_CreateGameServer FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_CreateGameServerBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_SERVER_ID = 6,
+    VT_MESSAGE = 8
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  uint32_t server_id() const {
+    return GetField<uint32_t>(VT_SERVER_ID, 0);
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyField<uint32_t>(verifier, VT_SERVER_ID, 4) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_CreateGameServerBuilder {
+  typedef S2C_CreateGameServer Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_CreateGameServer::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_server_id(uint32_t server_id) {
+    fbb_.AddElement<uint32_t>(S2C_CreateGameServer::VT_SERVER_ID, server_id, 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(S2C_CreateGameServer::VT_MESSAGE, message);
+  }
+  explicit S2C_CreateGameServerBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_CreateGameServer> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_CreateGameServer>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_CreateGameServer> CreateS2C_CreateGameServer(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    uint32_t server_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0) {
+  S2C_CreateGameServerBuilder builder_(_fbb);
+  builder_.add_message(message);
+  builder_.add_server_id(server_id);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_CreateGameServer> CreateS2C_CreateGameServerDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    uint32_t server_id = 0,
+    const char *message = nullptr) {
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return CreateS2C_CreateGameServer(
+      _fbb,
+      result,
+      server_id,
+      message__);
+}
+
+struct C2S_GameServerList FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_GameServerListBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_REQUEST_TYPE = 4
+  };
+  uint32_t request_type() const {
+    return GetField<uint32_t>(VT_REQUEST_TYPE, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_REQUEST_TYPE, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_GameServerListBuilder {
+  typedef C2S_GameServerList Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_request_type(uint32_t request_type) {
+    fbb_.AddElement<uint32_t>(C2S_GameServerList::VT_REQUEST_TYPE, request_type, 0);
+  }
+  explicit C2S_GameServerListBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_GameServerList> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_GameServerList>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_GameServerList> CreateC2S_GameServerList(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t request_type = 0) {
+  C2S_GameServerListBuilder builder_(_fbb);
+  builder_.add_request_type(request_type);
+  return builder_.Finish();
+}
+
+struct S2C_GameServerList FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_GameServerListBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_SERVERS = 6
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  const ::flatbuffers::Vector<::flatbuffers::Offset<GameServerData>> *servers() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<GameServerData>> *>(VT_SERVERS);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyOffset(verifier, VT_SERVERS) &&
+           verifier.VerifyVector(servers()) &&
+           verifier.VerifyVectorOfTables(servers()) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_GameServerListBuilder {
+  typedef S2C_GameServerList Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_GameServerList::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_servers(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<GameServerData>>> servers) {
+    fbb_.AddOffset(S2C_GameServerList::VT_SERVERS, servers);
+  }
+  explicit S2C_GameServerListBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_GameServerList> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_GameServerList>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_GameServerList> CreateS2C_GameServerList(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<GameServerData>>> servers = 0) {
+  S2C_GameServerListBuilder builder_(_fbb);
+  builder_.add_servers(servers);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_GameServerList> CreateS2C_GameServerListDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    const std::vector<::flatbuffers::Offset<GameServerData>> *servers = nullptr) {
+  auto servers__ = servers ? _fbb.CreateVector<::flatbuffers::Offset<GameServerData>>(*servers) : 0;
+  return CreateS2C_GameServerList(
+      _fbb,
+      result,
+      servers__);
+}
+
+struct C2S_JoinGameServer FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_JoinGameServerBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_USER_ID = 4,
+    VT_SERVER_ID = 6,
+    VT_SERVER_PASSWORD = 8
+  };
+  uint32_t user_id() const {
+    return GetField<uint32_t>(VT_USER_ID, 0);
+  }
+  uint32_t server_id() const {
+    return GetField<uint32_t>(VT_SERVER_ID, 0);
+  }
+  const ::flatbuffers::String *server_password() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SERVER_PASSWORD);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_USER_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_SERVER_ID, 4) &&
+           VerifyOffset(verifier, VT_SERVER_PASSWORD) &&
+           verifier.VerifyString(server_password()) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_JoinGameServerBuilder {
+  typedef C2S_JoinGameServer Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_user_id(uint32_t user_id) {
+    fbb_.AddElement<uint32_t>(C2S_JoinGameServer::VT_USER_ID, user_id, 0);
+  }
+  void add_server_id(uint32_t server_id) {
+    fbb_.AddElement<uint32_t>(C2S_JoinGameServer::VT_SERVER_ID, server_id, 0);
+  }
+  void add_server_password(::flatbuffers::Offset<::flatbuffers::String> server_password) {
+    fbb_.AddOffset(C2S_JoinGameServer::VT_SERVER_PASSWORD, server_password);
+  }
+  explicit C2S_JoinGameServerBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_JoinGameServer> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_JoinGameServer>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_JoinGameServer> CreateC2S_JoinGameServer(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t user_id = 0,
+    uint32_t server_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> server_password = 0) {
+  C2S_JoinGameServerBuilder builder_(_fbb);
+  builder_.add_server_password(server_password);
+  builder_.add_server_id(server_id);
+  builder_.add_user_id(user_id);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<C2S_JoinGameServer> CreateC2S_JoinGameServerDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t user_id = 0,
+    uint32_t server_id = 0,
+    const char *server_password = nullptr) {
+  auto server_password__ = server_password ? _fbb.CreateString(server_password) : 0;
+  return CreateC2S_JoinGameServer(
+      _fbb,
+      user_id,
+      server_id,
+      server_password__);
+}
+
+struct S2C_JoinGameServer FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_JoinGameServerBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_SERVER_IP = 6,
+    VT_SERVER_PORT = 8,
+    VT_MESSAGE = 10
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  const ::flatbuffers::String *server_ip() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SERVER_IP);
+  }
+  uint32_t server_port() const {
+    return GetField<uint32_t>(VT_SERVER_PORT, 0);
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyOffset(verifier, VT_SERVER_IP) &&
+           verifier.VerifyString(server_ip()) &&
+           VerifyField<uint32_t>(verifier, VT_SERVER_PORT, 4) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_JoinGameServerBuilder {
+  typedef S2C_JoinGameServer Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_JoinGameServer::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_server_ip(::flatbuffers::Offset<::flatbuffers::String> server_ip) {
+    fbb_.AddOffset(S2C_JoinGameServer::VT_SERVER_IP, server_ip);
+  }
+  void add_server_port(uint32_t server_port) {
+    fbb_.AddElement<uint32_t>(S2C_JoinGameServer::VT_SERVER_PORT, server_port, 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(S2C_JoinGameServer::VT_MESSAGE, message);
+  }
+  explicit S2C_JoinGameServerBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_JoinGameServer> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_JoinGameServer>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_JoinGameServer> CreateS2C_JoinGameServer(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    ::flatbuffers::Offset<::flatbuffers::String> server_ip = 0,
+    uint32_t server_port = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0) {
+  S2C_JoinGameServerBuilder builder_(_fbb);
+  builder_.add_message(message);
+  builder_.add_server_port(server_port);
+  builder_.add_server_ip(server_ip);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_JoinGameServer> CreateS2C_JoinGameServerDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    const char *server_ip = nullptr,
+    uint32_t server_port = 0,
+    const char *message = nullptr) {
+  auto server_ip__ = server_ip ? _fbb.CreateString(server_ip) : 0;
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return CreateS2C_JoinGameServer(
+      _fbb,
+      result,
+      server_ip__,
+      server_port,
+      message__);
+}
+
+struct C2S_CloseGameServer FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_CloseGameServerBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_USER_ID = 4,
+    VT_SERVER_ID = 6
+  };
+  uint32_t user_id() const {
+    return GetField<uint32_t>(VT_USER_ID, 0);
+  }
+  uint32_t server_id() const {
+    return GetField<uint32_t>(VT_SERVER_ID, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_USER_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_SERVER_ID, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_CloseGameServerBuilder {
+  typedef C2S_CloseGameServer Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_user_id(uint32_t user_id) {
+    fbb_.AddElement<uint32_t>(C2S_CloseGameServer::VT_USER_ID, user_id, 0);
+  }
+  void add_server_id(uint32_t server_id) {
+    fbb_.AddElement<uint32_t>(C2S_CloseGameServer::VT_SERVER_ID, server_id, 0);
+  }
+  explicit C2S_CloseGameServerBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_CloseGameServer> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_CloseGameServer>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_CloseGameServer> CreateC2S_CloseGameServer(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t user_id = 0,
+    uint32_t server_id = 0) {
+  C2S_CloseGameServerBuilder builder_(_fbb);
+  builder_.add_server_id(server_id);
+  builder_.add_user_id(user_id);
+  return builder_.Finish();
+}
+
+struct S2C_CloseGameServer FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_CloseGameServerBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_MESSAGE = 6
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_CloseGameServerBuilder {
+  typedef S2C_CloseGameServer Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_CloseGameServer::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(S2C_CloseGameServer::VT_MESSAGE, message);
+  }
+  explicit S2C_CloseGameServerBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_CloseGameServer> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_CloseGameServer>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_CloseGameServer> CreateS2C_CloseGameServer(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0) {
+  S2C_CloseGameServerBuilder builder_(_fbb);
+  builder_.add_message(message);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_CloseGameServer> CreateS2C_CloseGameServerDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    const char *message = nullptr) {
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return CreateS2C_CloseGameServer(
+      _fbb,
+      result,
+      message__);
+}
+
+struct C2S_SavePlayerData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef C2S_SavePlayerDataBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_USER_ID = 4,
+    VT_LEVEL = 6,
+    VT_EXP = 8,
+    VT_HP = 10,
+    VT_MP = 12,
+    VT_GOLD = 14,
+    VT_POS_X = 16,
+    VT_POS_Y = 18
+  };
+  uint32_t user_id() const {
+    return GetField<uint32_t>(VT_USER_ID, 0);
+  }
+  uint32_t level() const {
+    return GetField<uint32_t>(VT_LEVEL, 0);
+  }
+  uint32_t exp() const {
+    return GetField<uint32_t>(VT_EXP, 0);
+  }
+  uint32_t hp() const {
+    return GetField<uint32_t>(VT_HP, 0);
+  }
+  uint32_t mp() const {
+    return GetField<uint32_t>(VT_MP, 0);
+  }
+  uint32_t gold() const {
+    return GetField<uint32_t>(VT_GOLD, 0);
+  }
+  float pos_x() const {
+    return GetField<float>(VT_POS_X, 0.0f);
+  }
+  float pos_y() const {
+    return GetField<float>(VT_POS_Y, 0.0f);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_USER_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_LEVEL, 4) &&
+           VerifyField<uint32_t>(verifier, VT_EXP, 4) &&
+           VerifyField<uint32_t>(verifier, VT_HP, 4) &&
+           VerifyField<uint32_t>(verifier, VT_MP, 4) &&
+           VerifyField<uint32_t>(verifier, VT_GOLD, 4) &&
+           VerifyField<float>(verifier, VT_POS_X, 4) &&
+           VerifyField<float>(verifier, VT_POS_Y, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct C2S_SavePlayerDataBuilder {
+  typedef C2S_SavePlayerData Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_user_id(uint32_t user_id) {
+    fbb_.AddElement<uint32_t>(C2S_SavePlayerData::VT_USER_ID, user_id, 0);
+  }
+  void add_level(uint32_t level) {
+    fbb_.AddElement<uint32_t>(C2S_SavePlayerData::VT_LEVEL, level, 0);
+  }
+  void add_exp(uint32_t exp) {
+    fbb_.AddElement<uint32_t>(C2S_SavePlayerData::VT_EXP, exp, 0);
+  }
+  void add_hp(uint32_t hp) {
+    fbb_.AddElement<uint32_t>(C2S_SavePlayerData::VT_HP, hp, 0);
+  }
+  void add_mp(uint32_t mp) {
+    fbb_.AddElement<uint32_t>(C2S_SavePlayerData::VT_MP, mp, 0);
+  }
+  void add_gold(uint32_t gold) {
+    fbb_.AddElement<uint32_t>(C2S_SavePlayerData::VT_GOLD, gold, 0);
+  }
+  void add_pos_x(float pos_x) {
+    fbb_.AddElement<float>(C2S_SavePlayerData::VT_POS_X, pos_x, 0.0f);
+  }
+  void add_pos_y(float pos_y) {
+    fbb_.AddElement<float>(C2S_SavePlayerData::VT_POS_Y, pos_y, 0.0f);
+  }
+  explicit C2S_SavePlayerDataBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<C2S_SavePlayerData> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<C2S_SavePlayerData>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<C2S_SavePlayerData> CreateC2S_SavePlayerData(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t user_id = 0,
+    uint32_t level = 0,
+    uint32_t exp = 0,
+    uint32_t hp = 0,
+    uint32_t mp = 0,
+    uint32_t gold = 0,
+    float pos_x = 0.0f,
+    float pos_y = 0.0f) {
+  C2S_SavePlayerDataBuilder builder_(_fbb);
+  builder_.add_pos_y(pos_y);
+  builder_.add_pos_x(pos_x);
+  builder_.add_gold(gold);
+  builder_.add_mp(mp);
+  builder_.add_hp(hp);
+  builder_.add_exp(exp);
+  builder_.add_level(level);
+  builder_.add_user_id(user_id);
+  return builder_.Finish();
+}
+
+struct S2C_SavePlayerData FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef S2C_SavePlayerDataBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_RESULT = 4,
+    VT_MESSAGE = 6
+  };
+  ResultCode result() const {
+    return static_cast<ResultCode>(GetField<int8_t>(VT_RESULT, 0));
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int8_t>(verifier, VT_RESULT, 1) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           verifier.EndTable();
+  }
+};
+
+struct S2C_SavePlayerDataBuilder {
+  typedef S2C_SavePlayerData Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_result(ResultCode result) {
+    fbb_.AddElement<int8_t>(S2C_SavePlayerData::VT_RESULT, static_cast<int8_t>(result), 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(S2C_SavePlayerData::VT_MESSAGE, message);
+  }
+  explicit S2C_SavePlayerDataBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<S2C_SavePlayerData> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<S2C_SavePlayerData>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<S2C_SavePlayerData> CreateS2C_SavePlayerData(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0) {
+  S2C_SavePlayerDataBuilder builder_(_fbb);
+  builder_.add_message(message);
+  builder_.add_result(result);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<S2C_SavePlayerData> CreateS2C_SavePlayerDataDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ResultCode result = ResultCode_SUCCESS,
+    const char *message = nullptr) {
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return CreateS2C_SavePlayerData(
+      _fbb,
+      result,
+      message__);
+}
+
 struct DatabasePacket FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef DatabasePacketBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -2480,6 +3496,36 @@ struct DatabasePacket FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const C2S_PlayerChat *packet_event_as_C2S_PlayerChat() const {
     return packet_event_type() == EventType_C2S_PlayerChat ? static_cast<const C2S_PlayerChat *>(packet_event()) : nullptr;
+  }
+  const S2C_CreateGameServer *packet_event_as_S2C_CreateGameServer() const {
+    return packet_event_type() == EventType_S2C_CreateGameServer ? static_cast<const S2C_CreateGameServer *>(packet_event()) : nullptr;
+  }
+  const C2S_CreateGameServer *packet_event_as_C2S_CreateGameServer() const {
+    return packet_event_type() == EventType_C2S_CreateGameServer ? static_cast<const C2S_CreateGameServer *>(packet_event()) : nullptr;
+  }
+  const S2C_GameServerList *packet_event_as_S2C_GameServerList() const {
+    return packet_event_type() == EventType_S2C_GameServerList ? static_cast<const S2C_GameServerList *>(packet_event()) : nullptr;
+  }
+  const C2S_GameServerList *packet_event_as_C2S_GameServerList() const {
+    return packet_event_type() == EventType_C2S_GameServerList ? static_cast<const C2S_GameServerList *>(packet_event()) : nullptr;
+  }
+  const S2C_JoinGameServer *packet_event_as_S2C_JoinGameServer() const {
+    return packet_event_type() == EventType_S2C_JoinGameServer ? static_cast<const S2C_JoinGameServer *>(packet_event()) : nullptr;
+  }
+  const C2S_JoinGameServer *packet_event_as_C2S_JoinGameServer() const {
+    return packet_event_type() == EventType_C2S_JoinGameServer ? static_cast<const C2S_JoinGameServer *>(packet_event()) : nullptr;
+  }
+  const S2C_CloseGameServer *packet_event_as_S2C_CloseGameServer() const {
+    return packet_event_type() == EventType_S2C_CloseGameServer ? static_cast<const S2C_CloseGameServer *>(packet_event()) : nullptr;
+  }
+  const C2S_CloseGameServer *packet_event_as_C2S_CloseGameServer() const {
+    return packet_event_type() == EventType_C2S_CloseGameServer ? static_cast<const C2S_CloseGameServer *>(packet_event()) : nullptr;
+  }
+  const S2C_SavePlayerData *packet_event_as_S2C_SavePlayerData() const {
+    return packet_event_type() == EventType_S2C_SavePlayerData ? static_cast<const S2C_SavePlayerData *>(packet_event()) : nullptr;
+  }
+  const C2S_SavePlayerData *packet_event_as_C2S_SavePlayerData() const {
+    return packet_event_type() == EventType_C2S_SavePlayerData ? static_cast<const C2S_SavePlayerData *>(packet_event()) : nullptr;
   }
   uint32_t client_socket() const {
     return GetField<uint32_t>(VT_CLIENT_SOCKET, 0);
@@ -2572,6 +3618,46 @@ template<> inline const S2C_PlayerChat *DatabasePacket::packet_event_as<S2C_Play
 
 template<> inline const C2S_PlayerChat *DatabasePacket::packet_event_as<C2S_PlayerChat>() const {
   return packet_event_as_C2S_PlayerChat();
+}
+
+template<> inline const S2C_CreateGameServer *DatabasePacket::packet_event_as<S2C_CreateGameServer>() const {
+  return packet_event_as_S2C_CreateGameServer();
+}
+
+template<> inline const C2S_CreateGameServer *DatabasePacket::packet_event_as<C2S_CreateGameServer>() const {
+  return packet_event_as_C2S_CreateGameServer();
+}
+
+template<> inline const S2C_GameServerList *DatabasePacket::packet_event_as<S2C_GameServerList>() const {
+  return packet_event_as_S2C_GameServerList();
+}
+
+template<> inline const C2S_GameServerList *DatabasePacket::packet_event_as<C2S_GameServerList>() const {
+  return packet_event_as_C2S_GameServerList();
+}
+
+template<> inline const S2C_JoinGameServer *DatabasePacket::packet_event_as<S2C_JoinGameServer>() const {
+  return packet_event_as_S2C_JoinGameServer();
+}
+
+template<> inline const C2S_JoinGameServer *DatabasePacket::packet_event_as<C2S_JoinGameServer>() const {
+  return packet_event_as_C2S_JoinGameServer();
+}
+
+template<> inline const S2C_CloseGameServer *DatabasePacket::packet_event_as<S2C_CloseGameServer>() const {
+  return packet_event_as_S2C_CloseGameServer();
+}
+
+template<> inline const C2S_CloseGameServer *DatabasePacket::packet_event_as<C2S_CloseGameServer>() const {
+  return packet_event_as_C2S_CloseGameServer();
+}
+
+template<> inline const S2C_SavePlayerData *DatabasePacket::packet_event_as<S2C_SavePlayerData>() const {
+  return packet_event_as_S2C_SavePlayerData();
+}
+
+template<> inline const C2S_SavePlayerData *DatabasePacket::packet_event_as<C2S_SavePlayerData>() const {
+  return packet_event_as_C2S_SavePlayerData();
 }
 
 struct DatabasePacketBuilder {
@@ -2695,6 +3781,46 @@ inline bool VerifyEventType(::flatbuffers::Verifier &verifier, const void *obj, 
       auto ptr = reinterpret_cast<const C2S_PlayerChat *>(obj);
       return verifier.VerifyTable(ptr);
     }
+    case EventType_S2C_CreateGameServer: {
+      auto ptr = reinterpret_cast<const S2C_CreateGameServer *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_CreateGameServer: {
+      auto ptr = reinterpret_cast<const C2S_CreateGameServer *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_S2C_GameServerList: {
+      auto ptr = reinterpret_cast<const S2C_GameServerList *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_GameServerList: {
+      auto ptr = reinterpret_cast<const C2S_GameServerList *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_S2C_JoinGameServer: {
+      auto ptr = reinterpret_cast<const S2C_JoinGameServer *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_JoinGameServer: {
+      auto ptr = reinterpret_cast<const C2S_JoinGameServer *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_S2C_CloseGameServer: {
+      auto ptr = reinterpret_cast<const S2C_CloseGameServer *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_CloseGameServer: {
+      auto ptr = reinterpret_cast<const C2S_CloseGameServer *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_S2C_SavePlayerData: {
+      auto ptr = reinterpret_cast<const S2C_SavePlayerData *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case EventType_C2S_SavePlayerData: {
+      auto ptr = reinterpret_cast<const C2S_SavePlayerData *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
     default: return true;
   }
 }
@@ -2741,4 +3867,4 @@ inline void FinishSizePrefixedDatabasePacketBuffer(
   fbb.FinishSizePrefixed(root);
 }
 
-#endif  // FLATBUFFERS_GENERATED_USEREVENT_H_
+#endif //FLATBUFFERS_GENERATED_USEREVENT_H_
