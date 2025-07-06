@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게임 서버 시스템 플로우 차트</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 1.2em;
+            margin-bottom: 40px;
+        }
+        
+        .tabs {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 30px;
+            gap: 10px;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            background: #ecf0f1;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            color: #34495e;
+        }
+        
+        .tab:hover {
+            background: #d5dbdb;
+            transform: translateY(-2px);
+        }
+        
+        .tab.active {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+        
+        .flowchart {
+            display: none;
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin-top: 20px;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .flowchart.active {
+            display: block;
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .flowchart h2 {
+            color: #2c3e50;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            text-align: center;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .flow-step {
+            background: white;
+            border: 2px solid #3498db;
+            border-radius: 10px;
+            padding: 15px 25px;
+            text-align: center;
+            font-weight: 500;
+            min-width: 200px;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .flow-step:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .flow-step.start {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+            border-color: #27ae60;
+        }
+        
+        .flow-step.end {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            border-color: #c0392b;
+        }
+        
+        .flow-step.decision {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+            border-color: #e67e22;
+            border-radius: 50%;
+            width: 150px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .flow-step.process {
+            background: linear-gradient(135deg, #9b59b6, #8e44ad);
+            color: white;
+            border-color: #8e44ad;
+        }
+        
+        .flow-step.database {
+            background: linear-gradient(135deg, #34495e, #2c3e50);
+            color: white;
+            border-color: #2c3e50;
+        }
+        
+        .arrow {
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 20px solid #3498db;
+            margin: 5px 0;
+        }
+        
+        .arrow.yes {
+            border-top-color: #2ecc71;
+        }
+        
+        .arrow.no {
+            border-top-color: #e74c3c;
+        }
+        
+        .branch-container {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 800px;
+            margin: 20px 0;
+        }
+        
+        .branch {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            margin: 0 20px;
+        }
+        
+        .branch-label {
+            background: #ecf0f1;
+            color: #2c3e50;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .branch-label.yes {
+            background: #d5f4e6;
+            color: #27ae60;
+        }
+        
+        .branch-label.no {
+            background: #fadbd8;
+            color: #e74c3c;
+        }
+        
+        .parallel-container {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 900px;
+            margin: 20px 0;
+            gap: 20px;
+        }
+        
+        .parallel-flow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            background: rgba(255,255,255,0.5);
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px dashed #bdc3c7;
+        }
+        
+        .section-title {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
+        .note {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            color: #856404;
+            font-size: 14px;
+            text-align: center;
+            max-width: 300px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .tabs {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .branch-container, .parallel-container {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .branch, .parallel-flow {
+                margin: 10px 0;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 게임 서버 시스템</h1>
+        <p class="subtitle">각 기능별 플로우 차트 및 시스템 아키텍처</p>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('system-arch')">🏗️ 시스템 아키텍처</button>
+            <button class="tab" onclick="showTab('login')">🔐 로그인/로그아웃</button>
+            <button class="tab" onclick="showTab('account')">👤 계정 관리</button>
+            <button class="tab" onclick="showTab('game-server')">🖥️ 게임서버 관리</button>
+            <button class="tab" onclick="showTab('player-data')">📊 플레이어 데이터</button>
+            <button class="tab" onclick="showTab('shop')">🛒 상점 시스템</button>
+            <button class="tab" onclick="showTab('network')">🌐 네트워크 통신</button>
+        </div>
+
+        <!-- 시스템 아키텍처 -->
+        <div id="system-arch" class="flowchart active">
+            <h2>🏗️ 전체 시스템 아키텍처</h2>
+            <div class="flow-container">
+                <div class="flow-step start">클라이언트 연결</div>
+                <div class="arrow"></div>
+                
+                <div class="parallel-container">
+                    <div class="parallel-flow">
+                        <div class="section-title">WorkerThread</div>
+                        <div class="flow-step">소켓 관리</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">패킷 수신</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">Task 큐 전송</div>
+                    </div>
+                    
+                    <div class="parallel-flow">
+                        <div class="section-title">DatabaseThread</div>
+                        <div class="flow-step">Task 처리</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step database">DB 작업 수행</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">응답 큐 전송</div>
+                    </div>
+                    
+                    <div class="parallel-flow">
+                        <div class="section-title">PacketManager</div>
+                        <div class="flow-step">패킷 파싱</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">데이터 검증</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">응답 생성</div>
+                    </div>
+                </div>
+                
+                <div class="arrow"></div>
+                <div class="flow-step end">클라이언트 응답</div>
+                
+                <div class="note">
+                    💡 Lock-free 큐를 사용한 멀티스레드 아키텍처
+                </div>
+            </div>
+        </div>
+
+        <!-- 로그인/로그아웃 -->
+        <div id="login" class="flowchart">
+            <h2>🔐 로그인/로그아웃 프로세스</h2>
+            <div class="flow-container">
+                <div class="flow-step start">로그인 요청</div>
+                <div class="arrow"></div>
+                <div class="flow-step process">사용자 인증</div>
+                <div class="arrow"></div>
+                <div class="flow-step decision">중복 로그인 확인</div>
+                
+                <div class="branch-container">
+                    <div class="branch">
+                        <div class="branch-label yes">중복 발견</div>
+                        <div class="arrow yes"></div>
+                        <div class="flow-step database">기존 세션 강제 종료</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">로그인 차단</div>
+                    </div>
+                    
+                    <div class="branch">
+                        <div class="branch-label no">중복 없음</div>
+                        <div class="arrow no"></div>
+                        <div class="flow-step database">세션 생성</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">플레이어 데이터 로드</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">로그인 성공</div>
+                    </div>
+                </div>
+                
+                <div class="note">
+                    🔒 로그아웃 시 게임서버 및 세션 정리 자동 수행
+                </div>
+            </div>
+        </div>
+
+        <!-- 계정 관리 -->
+        <div id="account" class="flowchart">
+            <h2>👤 계정 생성 및 관리</h2>
+            <div class="flow-container">
+                <div class="flow-step start">계정 생성 요청</div>
+                <div class="arrow"></div>
+                <div class="flow-step process">입력 데이터 검증</div>
+                <div class="arrow"></div>
+                <div class="flow-step decision">사용자명 중복 확인</div>
+                
+                <div class="branch-container">
+                    <div class="branch">
+                        <div class="branch-label yes">중복 발견</div>
+                        <div class="arrow yes"></div>
+                        <div class="flow-step end">계정 생성 실패</div>
+                    </div>
+                    
+                    <div class="branch">
+                        <div class="branch-label no">사용 가능</div>
+                        <div class="arrow no"></div>
+                        <div class="flow-step database">사용자 계정 생성</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step database">기본 플레이어 데이터 생성</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">계정 생성 성공</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 게임서버 관리 -->
+        <div id="game-server" class="flowchart">
+            <h2>🖥️ 게임서버 생성 및 관리</h2>
+            <div class="flow-container">
+                <div class="flow-step start">게임서버 생성 요청</div>
+                <div class="arrow"></div>
+                <div class="flow-step process">서버 정보 검증</div>
+                <div class="arrow"></div>
+                <div class="flow-step decision">서버명 중복 확인</div>
+                
+                <div class="branch-container">
+                    <div class="branch">
+                        <div class="branch-label yes">중복 발견</div>
+                        <div class="arrow yes"></div>
+                        <div class="flow-step end">생성 실패</div>
+                    </div>
+                    
+                    <div class="branch">
+                        <div class="branch-label no">사용 가능</div>
+                        <div class="arrow no"></div>
+                        <div class="flow-step database">게임서버 레코드 생성</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">서버 목록 업데이트</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">생성 성공</div>
+                    </div>
+                </div>
+                
+                <div class="note">
+                    🎯 서버 참가, 목록 조회, 종료 기능 포함
+                </div>
+            </div>
+        </div>
+
+        <!-- 플레이어 데이터 -->
+        <div id="player-data" class="flowchart">
+            <h2>📊 플레이어 데이터 관리</h2>
+            <div class="flow-container">
+                <div class="flow-step start">데이터 요청</div>
+                <div class="arrow"></div>
+                <div class="flow-step decision">요청 타입 확인</div>
+                
+                <div class="parallel-container">
+                    <div class="parallel-flow">
+                        <div class="section-title">데이터 조회</div>
+                        <div class="flow-step database">플레이어 정보 로드</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">아이템 데이터 로드</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">응답 전송</div>
+                    </div>
+                    
+                    <div class="parallel-flow">
+                        <div class="section-title">데이터 저장</div>
+                        <div class="flow-step">레벨, 경험치 업데이트</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">위치 정보 저장</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step database">DB 업데이트</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">저장 완료</div>
+                    </div>
+                    
+                    <div class="parallel-flow">
+                        <div class="section-title">아이템 수정</div>
+                        <div class="flow-step">아이템 유효성 검사</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step database">인벤토리 업데이트</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">수정 완료</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 상점 시스템 -->
+        <div id="shop" class="flowchart">
+            <h2>🛒 상점 시스템</h2>
+            <div class="flow-container">
+                <div class="flow-step start">상점 요청</div>
+                <div class="arrow"></div>
+                <div class="flow-step decision">요청 타입 분기</div>
+                
+                <div class="parallel-container">
+                    <div class="parallel-flow">
+                        <div class="section-title">상점 목록</div>
+                        <div class="flow-step database">맵별 상점 조회</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">목록 응답</div>
+                    </div>
+                    
+                    <div class="parallel-flow">
+                        <div class="section-title">상점 아이템</div>
+                        <div class="flow-step database">상점 아이템 조회</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">아이템 목록 응답</div>
+                    </div>
+                    
+                    <div class="parallel-flow">
+                        <div class="section-title">거래 처리</div>
+                        <div class="flow-step decision">구매/판매 확인</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step process">금액 및 아이템 검증</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step database">거래 실행</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">거래 완료</div>
+                    </div>
+                </div>
+                
+                <div class="note">
+                    💰 구매/판매 시 골드 및 인벤토리 동시 업데이트
+                </div>
+            </div>
+        </div>
+
+        <!-- 네트워크 통신 -->
+        <div id="network" class="flowchart">
+            <h2>🌐 네트워크 통신 플로우</h2>
+            <div class="flow-container">
+                <div class="flow-step start">클라이언트 연결</div>
+                <div class="arrow"></div>
+                <div class="flow-step">WorkerThread에 배정</div>
+                <div class="arrow"></div>
+                <div class="flow-step process">소켓 모니터링 (select)</div>
+                <div class="arrow"></div>
+                <div class="flow-step decision">데이터 수신?</div>
+                
+                <div class="branch-container">
+                    <div class="branch">
+                        <div class="branch-label yes">수신됨</div>
+                        <div class="arrow yes"></div>
+                        <div class="flow-step">패킷 크기 헤더 읽기</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">패킷 데이터 읽기</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">Task 생성 및 큐 전송</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step database">DatabaseThread 처리</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step">응답 큐에서 결과 수신</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step end">클라이언트에 응답 전송</div>
+                    </div>
+                    
+                    <div class="branch">
+                        <div class="branch-label no">대기</div>
+                        <div class="arrow no"></div>
+                        <div class="flow-step">타임아웃 대기</div>
+                        <div class="arrow"></div>
+                        <div class="flow-step process">다시 모니터링</div>
+                    </div>
+                </div>
+                
+                <div class="note">
+                    ⚡ Lock-free 큐와 멀티스레딩으로 높은 성능 보장
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabName) {
+            // 모든 탭과 플로우차트 숨기기
+            const tabs = document.querySelectorAll('.tab');
+            const flowcharts = document.querySelectorAll('.flowchart');
+            
+            tabs.forEach(tab => tab.classList.remove('active'));
+            flowcharts.forEach(chart => chart.classList.remove('active'));
+            
+            // 선택된 탭과 플로우차트 보이기
+            event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+        
+        // 페이지 로드 시 애니메이션
+        document.addEventListener('DOMContentLoaded', function() {
+            const flowSteps = document.querySelectorAll('.flow-step');
+            flowSteps.forEach((step, index) => {
+                step.style.animationDelay = `${index * 0.1}s`;
+            });
+        });
+    </script>
+</body>
+</html>
