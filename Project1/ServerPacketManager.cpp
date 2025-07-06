@@ -704,16 +704,17 @@ std::vector<uint8_t> ServerPacketManager::CreateItemDataResponseFromDB(MYSQL_RES
     if (!IsValidMySQLResult(result)) {
         return CreateItemDataErrorResponse(ResultCode_FAIL, user_id, client_socket);
     }
-
     ClearError();
     try {
         flatbuffers::FlatBufferBuilder builder;
-
         std::vector<flatbuffers::Offset<ItemData>> items;
         uint32_t gold = 0;
         bool first_row = true;
-
         MYSQL_ROW row;
+
+        // 첫 번째 행에서 컬럼 개수 확인
+        unsigned int num_fields = mysql_num_fields(result);
+
         while ((row = mysql_fetch_row(result))) {
             uint32_t item_id = GetUintFromRow(row, 0);
             std::string item_name = GetStringFromRow(row, 1);
@@ -733,7 +734,13 @@ std::vector<uint8_t> ServerPacketManager::CreateItemDataResponseFromDB(MYSQL_RES
             items.push_back(itemData);
 
             if (first_row) {
-                gold = GetUintFromRow(row, 10); // gold는 첫 번째 행에서만 가져오기
+                // 컬럼이 11개 이상인 경우에만 gold 값 가져오기
+                if (num_fields > 10) {
+                    gold = GetUintFromRow(row, 10);
+                }
+                else {
+                    gold = 0; // gold 컬럼이 없으면 0으로 설정
+                }
                 first_row = false;
             }
         }
@@ -741,12 +748,10 @@ std::vector<uint8_t> ServerPacketManager::CreateItemDataResponseFromDB(MYSQL_RES
         auto itemsVector = builder.CreateVector(items);
         auto itemResponse = CreateS2C_ItemData(builder, ResultCode_SUCCESS, user_id, itemsVector, gold);
         auto packet = CreateDatabasePacket(builder, EventType_S2C_ItemData, itemResponse.Union(), client_socket);
-
         builder.Finish(packet);
 
         uint8_t* bufferPointer = builder.GetBufferPointer();
         size_t bufferSize = builder.GetSize();
-
         return std::vector<uint8_t>(bufferPointer, bufferPointer + bufferSize);
     }
     catch (const std::exception& e) {

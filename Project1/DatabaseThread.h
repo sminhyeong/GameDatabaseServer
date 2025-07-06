@@ -94,7 +94,7 @@ private:
 
     // 간소화된 세션 관리 함수들
     bool InitializeUserSessions();              // 서버 시작 시 세션 초기화
-    bool SetUserOnlineStatus(uint32_t user_id, bool is_online);  // 온라인 상태 설정
+    bool SetUserOnlineStatus(uint32_t user_id, bool is_online, uintptr_t client_socket = 0);  // 온라인 상태 설정
 
     bool ForceLogoutExistingSession(uint32_t user_id);
 

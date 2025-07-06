@@ -62,6 +62,7 @@ bool MySqlConnector::Connect(std::string host, std::string userName, std::string
 bool MySqlConnector::ExecuteQuery(const std::string& query)
 {
     mysql_set_character_set(conn, "euckr");
+
     if (!conn || !_is_init) {
         std::cerr << "MySQL not initialized or connected" << std::endl;
         return false;

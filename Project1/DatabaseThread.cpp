@@ -60,7 +60,6 @@ bool DatabaseThread::ConnectDB()
 				std::cerr << "[DatabaseThread] 사용자 세션 초기화 실패" << std::endl;
 				return false;
 			}
-
 			// 연결 성공 시 스레드 시작
 			_is_running = true;
 			_db_thread = std::thread(&DatabaseThread::Run, this);
@@ -148,7 +147,7 @@ bool DatabaseThread::InitializeUserSessions()
 	return false;
 }
 
-bool DatabaseThread::SetUserOnlineStatus(uint32_t user_id, bool is_online)
+bool DatabaseThread::SetUserOnlineStatus(uint32_t user_id, bool is_online, uintptr_t client_socket)
 {
 	if (!CheckDBConnection()) {
 		return false;
@@ -158,8 +157,8 @@ bool DatabaseThread::SetUserOnlineStatus(uint32_t user_id, bool is_online)
 		std::stringstream query;
 		if (is_online) {
 			query << "INSERT INTO user_sessions (user_id, is_online, login_time, last_activity, client_socket) "
-				<< "VALUES (" << user_id << ", 1, NOW(), NOW(), 0) "
-				<< "ON DUPLICATE KEY UPDATE is_online = 1, login_time = NOW(), last_activity = NOW()";
+				<< "VALUES (" << user_id << ", 1, NOW(), NOW(), " << client_socket << ") "
+				<< "ON DUPLICATE KEY UPDATE is_online = 1, login_time = NOW(), last_activity = NOW(), client_socket = " << client_socket;
 		}
 		else {
 			query << "UPDATE user_sessions SET is_online = 0, last_activity = NOW(), client_socket = 0 "
@@ -441,7 +440,7 @@ void DatabaseThread::HandleLoginRequest(const Task& task)
 	}
 
 	// 새로운 로그인 처리 (간소화됨)
-	if (SetUserOnlineStatus(user_id, true)) {
+	if (SetUserOnlineStatus(user_id, true, task.client_socket)) {
 		auto responsePacket = _packet_manager->CreateLoginResponse(
 			ResultCode_SUCCESS, user_id, loginReq->username()->str(), nickname, level, task.client_socket);
 		SendResponse(task, responsePacket);
@@ -470,27 +469,57 @@ void DatabaseThread::HandleLogoutRequest(const Task& task)
 	std::cout << "[DatabaseThread] 로그아웃 요청 처리: 사용자 ID " << user_id << std::endl;
 	std::cout << "[DatabaseThread] 클라이언트 소켓: " << task.client_socket << std::endl;
 
-	// 사용자 오프라인 상태로 설정
+	// ========== 추가: 게임 서버 정리 (소켓 연결은 유지) ==========
+	// 해당 사용자가 소유한 게임 서버들을 비활성화
+	try {
+		std::cout << "[DatabaseThread] 사용자 ID " << user_id << "의 게임 서버 정리 시작..." << std::endl;
+
+		std::stringstream query;
+		query << "UPDATE game_servers SET is_active = FALSE "
+			<< "WHERE owner_user_id = " << user_id << " AND is_active = TRUE";
+
+		if (_sql_connector->ExecuteQuery(query.str())) {
+			int affected_rows = _sql_connector->GetAffectedRows();
+			if (affected_rows > 0) {
+				std::cout << "[DatabaseThread] " << affected_rows << "개의 게임 서버를 비활성화했습니다."
+					<< " (사용자 ID: " << user_id << ")" << std::endl;
+			}
+			else {
+				std::cout << "[DatabaseThread] 사용자 ID " << user_id << "가 소유한 활성 게임 서버 없음" << std::endl;
+			}
+		}
+		else {
+			std::cerr << "[DatabaseThread] 게임 서버 정리 쿼리 실패 (사용자 ID: " << user_id << ")" << std::endl;
+		}
+	}
+	catch (const std::exception& e) {
+		std::cerr << "[DatabaseThread] 게임 서버 정리 중 예외: " << e.what() << std::endl;
+	}
+	// =========================================================
+
+	// 사용자 오프라인 상태로 설정 (소켓은 그대로 유지)
 	bool offline_result = SetUserOnlineStatus(user_id, false);
 	std::cout << "[DatabaseThread] 오프라인 상태 설정 결과: " << (offline_result ? "성공" : "실패") << std::endl;
 
-	// 항상 성공 응답 생성
+	// 로그아웃 성공 응답 생성
 	std::cout << "[DatabaseThread] 로그아웃 응답 패킷 생성 중..." << std::endl;
 	auto responsePacket = _packet_manager->CreateLogoutResponse(
 		ResultCode_SUCCESS, "로그아웃 완료", task.client_socket);
 
 	if (responsePacket.empty()) {
 		std::cerr << "[DatabaseThread] 로그아웃 응답 패킷 생성 실패!" << std::endl;
+		SendErrorResponse(task, EventType_S2C_Logout, ResultCode_FAIL);
 		return;
 	}
 
 	std::cout << "[DatabaseThread] 로그아웃 응답 패킷 크기: " << responsePacket.size() << " bytes" << std::endl;
 
-	// 응답 전송
+	// 응답 전송 (소켓 연결 유지)
 	SendResponse(task, responsePacket);
 
 	std::cout << "[DatabaseThread] 로그아웃 처리 완료: 사용자 ID " << user_id << std::endl;
-	std::cout << "[DatabaseThread] =================== 로그아웃 요청 종료 ===================" << std::endl;
+	std::cout << "[DatabaseThread] → 게임 서버 비활성화됨, 소켓 연결 유지됨" << std::endl;
+	std::cout << "[DatabaseThread] =================== 로그아웃 요청 완료 ===================" << std::endl;
 }
 
 void DatabaseThread::HandleCreateAccountRequest(const Task& task)
@@ -651,6 +680,23 @@ void DatabaseThread::HandleItemDataRequest(const Task& task)
 		// 인벤토리가 비어있는 경우
 		auto responsePacket = _packet_manager->CreateItemDataResponse(ResultCode_SUCCESS, itemReq->user_id(), 0, task.client_socket);
 		SendResponse(task, responsePacket);
+	}
+	else if (itemReq->request_type() == 3) {  // 새로 추가
+		// 특정 아이템 정보 조회
+		std::stringstream query;
+		query << "SELECT item_id, item_name, 0 as item_count, item_type, base_price, "
+			<< "attack_bonus, defense_bonus, hp_bonus, mp_bonus, description "
+			<< "FROM item_master WHERE item_id = " << itemReq->item_id();
+
+		if (_sql_connector->ExecuteQuery(query.str())) {
+			MYSQL_RES* result = _sql_connector->GetResult();
+			if (result) {
+				auto responsePacket = _packet_manager->CreateItemDataResponseFromDB(result, 0, task.client_socket);
+				SendResponse(task, responsePacket);
+				return;
+			}
+		}
+		SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_ITEM_NOT_FOUND);
 	}
 	else {
 		// 아이템 추가/제거 처리는 기존과 동일하게 유지
@@ -920,23 +966,27 @@ void DatabaseThread::HandleGameServerListRequest(const Task& task)
 		return;
 	}
 
-	std::cout << "[DatabaseThread] 게임 서버 목록 요청 처리" << std::endl;
+	std::cout << "[DatabaseThread] 게임 서버 목록 요청 처리: 클라이언트 소켓 " << task.client_socket << std::endl;
 
-	// 활성화된 게임 서버 목록 조회
+	// 활성화된 모든 서버 + 요청한 클라이언트의 비활성화된 서버를 한 번에 조회
 	std::stringstream query;
 	query << "SELECT server_id, server_name, server_ip, server_port, owner_user_id, owner_nickname, "
 		<< "current_players, max_players, "
 		<< "CASE WHEN server_password = '' THEN 0 ELSE 1 END as has_password "
 		<< "FROM game_servers "
-		<< "WHERE is_active = 1 "
-		<< "ORDER BY created_at DESC";
+		<< "WHERE is_active = 1 "  // 모든 활성 서버
+		<< "OR owner_user_id = ("  // 또는 요청한 클라이언트의 서버 (활성+비활성)
+		<< "    SELECT user_id FROM user_sessions "
+		<< "    WHERE client_socket = " << task.client_socket << " AND is_online = TRUE"
+		<< ") "
+		<< "ORDER BY is_active DESC, created_at DESC";
 
 	if (_sql_connector->ExecuteQuery(query.str())) {
 		MYSQL_RES* result = _sql_connector->GetResult();
 		if (result) {
 			auto responsePacket = _packet_manager->CreateGameServerListResponseFromDB(result, task.client_socket);
 			SendResponse(task, responsePacket);
-			std::cout << "[DatabaseThread] 게임 서버 목록 전송 완료" << std::endl;
+			std::cout << "[DatabaseThread] 통합 게임 서버 목록 전송 완료" << std::endl;
 			return;
 		}
 	}
@@ -954,14 +1004,15 @@ void DatabaseThread::HandleJoinGameServerRequest(const Task& task)
 		return;
 	}
 
-	std::cout << "[DatabaseThread] 게임 서버 접속 요청 처리: 서버 ID " << joinReq->server_id() << std::endl;
+	std::cout << "[DatabaseThread] 게임 서버 접속 요청 처리: 서버 ID " << joinReq->server_id()
+		<< ", 사용자 ID: " << joinReq->user_id() << std::endl;
 
-	// 게임 서버 정보 조회 및 검증
+	// 1. 서버 정보 조회 (활성/비활성 상관없이)
 	std::stringstream query;
-	query << "SELECT server_name, server_password, server_ip, server_port, current_players, max_players "
+	query << "SELECT server_name, server_password, server_ip, server_port, current_players, max_players, "
+		<< "owner_user_id, owner_socket, created_at, is_active "
 		<< "FROM game_servers "
-		<< "WHERE server_id = " << joinReq->server_id()
-		<< " AND is_active = 1";
+		<< "WHERE server_id = " << joinReq->server_id();
 
 	if (!_sql_connector->ExecuteQuery(query.str())) {
 		SendErrorResponse(task, EventType_S2C_JoinGameServer, ResultCode_FAIL);
@@ -983,38 +1034,76 @@ void DatabaseThread::HandleJoinGameServerRequest(const Task& task)
 		return;
 	}
 
-	std::string server_name = _packet_manager->GetStringFromRow(row, 0);
-	std::string server_password = _packet_manager->GetStringFromRow(row, 1);
-	std::string server_ip = _packet_manager->GetStringFromRow(row, 2);
-	uint32_t server_port = _packet_manager->GetUintFromRow(row, 3);
-	uint32_t current_players = _packet_manager->GetUintFromRow(row, 4);
-	uint32_t max_players = _packet_manager->GetUintFromRow(row, 5);
+	// 2. 테이블 구조에 맞게 데이터 추출
+	std::string server_name = _packet_manager->GetStringFromRow(row, 0);        // server_name
+	std::string server_password = _packet_manager->GetStringFromRow(row, 1);    // server_password
+	std::string server_ip = _packet_manager->GetStringFromRow(row, 2);          // server_ip
+	uint32_t server_port = _packet_manager->GetUintFromRow(row, 3);             // server_port
+	uint32_t current_players = _packet_manager->GetUintFromRow(row, 4);         // current_players
+	uint32_t max_players = _packet_manager->GetUintFromRow(row, 5);             // max_players
+	uint32_t owner_user_id = _packet_manager->GetUintFromRow(row, 6);           // owner_user_id
+	// row[7] = owner_socket (필요시 사용)
+	// row[8] = created_at (필요시 사용)
+	bool is_active = (_packet_manager->GetUintFromRow(row, 9) == 1);            // is_active
 
 	_sql_connector->FreeResult(result);
 
-	// 서버 정원 확인
-	if (current_players >= max_players) {
+	// 3. 서버 소유자인지 확인
+	bool is_owner = (joinReq->user_id() == owner_user_id);
+
+	// 4. 서버가 비활성화되어 있고 소유자가 아닌 경우 접속 거부
+	if (!is_active && !is_owner) {
+		auto responsePacket = _packet_manager->CreateJoinGameServerErrorResponse(
+			ResultCode_SERVER_NOT_FOUND, "서버가 비활성화되어 있습니다", task.client_socket);
+		SendResponse(task, responsePacket);
+		return;
+	}
+
+	// 5. 서버가 비활성화되어 있고 소유자인 경우 → 서버 재활성화
+	if (!is_active && is_owner) {
+		std::stringstream reactivateQuery;
+		reactivateQuery << "UPDATE game_servers SET is_active = TRUE, owner_socket = "
+			<< task.client_socket << " WHERE server_id = " << joinReq->server_id();
+
+		if (_sql_connector->ExecuteQuery(reactivateQuery.str())) {
+			std::cout << "[DatabaseThread] 서버 재활성화 성공: " << server_name
+				<< " (소유자: " << joinReq->user_id() << ")" << std::endl;
+		}
+		else {
+			std::cerr << "[DatabaseThread] 서버 재활성화 실패" << std::endl;
+			SendErrorResponse(task, EventType_S2C_JoinGameServer, ResultCode_FAIL);
+			return;
+		}
+	}
+
+	// 6. 일반 사용자의 경우 서버 정원 확인 (소유자는 정원 제한 없음)
+	if (!is_owner && current_players >= max_players) {
 		auto responsePacket = _packet_manager->CreateJoinGameServerErrorResponse(
 			ResultCode_SERVER_FULL, "서버가 가득 찼습니다", task.client_socket);
 		SendResponse(task, responsePacket);
 		return;
 	}
 
-	// 패스워드 확인
-	if (!server_password.empty() && server_password != joinReq->server_password()->str()) {
+	// 7. 패스워드 확인 (소유자는 패스워드 체크 생략)
+	if (!is_owner && !server_password.empty() && server_password != joinReq->server_password()->str()) {
 		auto responsePacket = _packet_manager->CreateJoinGameServerErrorResponse(
 			ResultCode_SERVER_PASSWORD_WRONG, "서버 패스워드가 틀렸습니다", task.client_socket);
 		SendResponse(task, responsePacket);
 		return;
 	}
 
-	// 접속 성공 - 서버 IP/Port 전달
+	// 8. 접속 성공 - 서버 IP/Port 전달
+	std::string success_message = is_owner && !is_active ?
+		"서버가 재활성화되어 접속되었습니다" : "서버 접속 정보";
+
 	auto responsePacket = _packet_manager->CreateJoinGameServerResponse(
-		ResultCode_SUCCESS, server_ip, server_port, "서버 접속 정보", task.client_socket);
+		ResultCode_SUCCESS, server_ip, server_port, success_message, task.client_socket);
 	SendResponse(task, responsePacket);
 
 	std::cout << "[DatabaseThread] 게임 서버 접속 승인: " << server_name
-		<< " (" << server_ip << ":" << server_port << ")" << std::endl;
+		<< " (" << server_ip << ":" << server_port << ")"
+		<< (is_owner ? " [소유자 접속]" : "")
+		<< (!is_active && is_owner ? " [서버 재활성화]" : "") << std::endl;
 }
 
 void DatabaseThread::HandleCloseGameServerRequest(const Task& task)
