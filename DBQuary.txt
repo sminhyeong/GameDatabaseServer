@@ -1,0 +1,196 @@
+-- 게임 데이터베이스 생성
+CREATE DATABASE GameDB;
+USE GameDB;
+
+-- 1. 사용자 계정 테이블 (수정됨: username을 string으로 변경)
+CREATE TABLE users (
+    user_id INT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) UNIQUE NOT NULL,  -- 로그인 ID (문자열)
+    password VARCHAR(255) NOT NULL,        -- 패스워드 (문자열)
+    nickname VARCHAR(50) NOT NULL,         -- 닉네임 (문자열)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP NULL,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- 2. 플레이어 캐릭터 데이터 테이블
+CREATE TABLE player_data (
+    user_id INT PRIMARY KEY,
+    level INT DEFAULT 1,
+    exp INT DEFAULT 0,
+    hp INT DEFAULT 100,
+    mp INT DEFAULT 50,
+    attack INT DEFAULT 10,
+    defense INT DEFAULT 5,
+    gold INT DEFAULT 1000,
+    map_id INT DEFAULT 1,
+    pos_x FLOAT DEFAULT 0.0,
+    pos_y FLOAT DEFAULT 0.0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- 3. 아이템 마스터 테이블 (게임 내 모든 아이템 정보)
+CREATE TABLE item_master (
+    item_id INT PRIMARY KEY,
+    item_name VARCHAR(100) NOT NULL,
+    item_type INT NOT NULL, -- 0:무기, 1:방어구, 2:소모품
+    base_price INT DEFAULT 0,
+    description TEXT,
+    attack_bonus INT DEFAULT 0,
+    defense_bonus INT DEFAULT 0,
+    hp_bonus INT DEFAULT 0,
+    mp_bonus INT DEFAULT 0
+);
+
+-- 4. 플레이어 인벤토리 테이블
+CREATE TABLE player_inventory (
+    inventory_id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    item_id INT NOT NULL,
+    item_count INT DEFAULT 1,
+    acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES item_master(item_id),
+    UNIQUE KEY unique_user_item (user_id, item_id)
+);
+
+-- 5. 몬스터 마스터 테이블
+CREATE TABLE monster_master (
+    monster_id INT PRIMARY KEY,
+    monster_name VARCHAR(100) NOT NULL,
+    level INT NOT NULL,
+    hp INT NOT NULL,
+    attack INT NOT NULL,
+    defense INT NOT NULL,
+    exp_reward INT NOT NULL,
+    gold_reward INT NOT NULL,
+    spawn_map_id INT DEFAULT 1
+);
+
+-- 6. 채팅 로그 테이블
+CREATE TABLE chat_logs (
+    chat_id INT PRIMARY KEY AUTO_INCREMENT,
+    sender_id INT NOT NULL,
+    receiver_id INT NULL, -- NULL이면 전체채팅
+    message TEXT NOT NULL,
+    chat_type INT NOT NULL, -- 0:전체, 1:귓속말, 2:길드
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (sender_id) REFERENCES users(user_id),
+    FOREIGN KEY (receiver_id) REFERENCES users(user_id),
+    INDEX idx_chat_type_time (chat_type, timestamp),
+    INDEX idx_receiver_time (receiver_id, timestamp)
+);
+
+-- 7. 상점 마스터 테이블 (각 상점의 기본 정보)
+CREATE TABLE shop_master (
+    shop_id INT PRIMARY KEY,
+    shop_name VARCHAR(100) NOT NULL,
+    shop_type INT NOT NULL, -- 0:일반상점, 1:무기점, 2:방어구점, 3:포션점
+    map_id INT DEFAULT 1,
+    pos_x FLOAT DEFAULT 0.0,
+    pos_y FLOAT DEFAULT 0.0,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- 8. 상점 아이템 연결 테이블 (상점 ID와 아이템 ID만 연결)
+CREATE TABLE shop_items (
+    shop_id INT NOT NULL,
+    item_id INT NOT NULL,
+    PRIMARY KEY (shop_id, item_id),
+    FOREIGN KEY (shop_id) REFERENCES shop_master(shop_id),
+    FOREIGN KEY (item_id) REFERENCES item_master(item_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    user_id INT PRIMARY KEY,
+    is_online BOOLEAN DEFAULT FALSE,
+    login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    client_socket INT DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- 게임 서버 테이블
+CREATE TABLE game_servers (
+    server_id INT PRIMARY KEY AUTO_INCREMENT,
+    server_name VARCHAR(100) NOT NULL,
+    server_password VARCHAR(255),
+    server_ip VARCHAR(45) NOT NULL,
+    server_port INT NOT NULL,
+    owner_user_id INT NOT NULL,
+    owner_nickname VARCHAR(50) NOT NULL,
+    owner_socket INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE,
+    current_players INT DEFAULT 0,
+    max_players INT DEFAULT 10,
+    FOREIGN KEY (owner_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    INDEX idx_active_servers (is_active, created_at)
+);game_servers
+
+-- 기본 데이터 삽입
+-- 테스트용 사용자 데이터
+INSERT INTO users (username, password, nickname) VALUES 
+('testuser1', 'password123', '전사'),
+('testuser2', 'password456', '마법사'),
+('admin', 'admin123', '관리자');
+
+-- 각 사용자의 플레이어 데이터 생성
+INSERT INTO player_data (user_id, level, exp, hp, mp, attack, defense, gold) VALUES 
+(1, 5, 450, 150, 80, 25, 15, 2500),
+(2, 3, 200, 120, 120, 15, 10, 1800),
+(3, 99, 99999, 9999, 9999, 999, 999, 999999);
+
+-- 테스트용 아이템 데이터
+INSERT INTO item_master VALUES 
+(1, '나무 검', 0, 100, '기본적인 나무 검', 5, 0, 0, 0),
+(2, '철 검', 0, 500, '단단한 철 검', 15, 0, 0, 0),
+(3, '가죽 갑옷', 1, 200, '기본적인 가죽 갑옷', 0, 10, 0, 0),
+(4, '철 갑옷', 1, 800, '튼튼한 철 갑옷', 0, 25, 0, 0),
+(5, '체력 포션', 2, 50, 'HP를 회복시켜주는 포션', 0, 0, 50, 0),
+(6, '마나 포션', 2, 30, 'MP를 회복시켜주는 포션', 0, 0, 0, 30),
+(7, '황금 검', 0, 2000, '희귀한 황금 검', 35, 0, 0, 0),
+(8, '드래곤 갑옷', 1, 5000, '전설의 드래곤 갑옷', 0, 50, 100, 0);
+
+-- 테스트용 몬스터 데이터
+INSERT INTO monster_master VALUES 
+(1, '슬라임', 1, 30, 5, 2, 10, 20, 1),
+(2, '고블린', 3, 80, 12, 5, 35, 50, 1),
+(3, '오크', 5, 150, 25, 12, 75, 100, 2),
+(4, '스켈레톤', 7, 200, 35, 15, 120, 150, 2),
+(5, '드래곤', 20, 1000, 100, 50, 500, 1000, 3);
+
+-- 상점 마스터 데이터
+INSERT INTO shop_master VALUES 
+(1, '무기 상점', 1, 1, 10.0, 20.0, TRUE),
+(2, '방어구 상점', 2, 1, 30.0, 20.0, TRUE),
+(3, '포션 상점', 3, 1, 50.0, 20.0, TRUE),
+(4, '종합 상점', 0, 2, 0.0, 0.0, TRUE);
+
+-- 상점별 판매 아이템 설정 (상점 ID와 아이템 ID만 연결)
+INSERT INTO shop_items (shop_id, item_id) VALUES 
+-- 무기 상점 (shop_id: 1)
+(1, 1),   -- 나무 검
+(1, 2),   -- 철 검
+(1, 7),   -- 황금 검
+-- 방어구 상점 (shop_id: 2)
+(2, 3),   -- 가죽 갑옷
+(2, 4),   -- 철 갑옷
+(2, 8),   -- 드래곤 갑옷
+-- 포션 상점 (shop_id: 3)
+(3, 5),   -- 체력 포션
+(3, 6),   -- 마나 포션
+-- 종합 상점 (shop_id: 4)
+(4, 1),   -- 나무 검
+(4, 3),   -- 가죽 갑옷
+(4, 5),   -- 체력 포션
+(4, 6);   -- 마나 포션
+
+-- 테스트용 인벤토리 데이터
+INSERT INTO player_inventory (user_id, item_id, item_count) VALUES 
+(1, 1, 1),   -- testuser1이 나무 검 1개
+(1, 3, 1),   -- testuser1이 가죽 갑옷 1개
+(1, 5, 5),   -- testuser1이 체력 포션 5개
+(2, 2, 1),   -- testuser2가 철 검 1개
+(2, 6, 3);   -- testuser2가 마나 포션 3개
