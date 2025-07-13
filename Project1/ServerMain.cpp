@@ -55,8 +55,8 @@ int main()
 
         Server* server = Server::Instance();
 
-        std::cout << "Starting server on 127.0.0.1:7777...\n";
-        server->Initialize("127.0.0.1", 7777);
+        std::cout << "Starting server\n";
+        server->Initialize("192.168.0.101", 36930);
 
         // 서버 실행
         server->Run();

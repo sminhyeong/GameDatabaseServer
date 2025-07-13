@@ -887,12 +887,11 @@ void DatabaseThread::HandleShopItemsRequest(const Task& task)
 void DatabaseThread::HandleShopTransactionRequest(const Task& task)
 {
 	const C2S_ShopTransaction* transReq = _packet_manager->ParseShopTransactionRequest(task.flatbuffer_data.data(), task.flatbuffer_data.size());
-
+	std::cout << "Item Count : " << transReq->item_count() << std::endl;
 	if (!transReq || !_packet_manager->ValidateShopTransactionRequest(transReq)) {
 		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
 		return;
 	}
-
 	if (transReq->transaction_type() == 0) {
 		HandleShopPurchase(task, transReq);
 	}
@@ -1323,7 +1322,6 @@ void DatabaseThread::HandleShopSell(const Task& task, const C2S_ShopTransaction*
 	uint32_t owned_count = std::stoul(row[0]);
 	uint32_t item_price = std::stoul(row[1]);
 	uint32_t sell_price = (item_price / 2) * transReq->item_count();
-
 	_sql_connector->FreeResult(result);
 
 	if (owned_count < transReq->item_count()) {
@@ -1333,38 +1331,73 @@ void DatabaseThread::HandleShopSell(const Task& task, const C2S_ShopTransaction*
 		return;
 	}
 
-	// 트랜잭션으로 아이템 제거와 골드 추가를 한 번에 처리
-	std::stringstream transactionQuery;
-	transactionQuery << "START TRANSACTION; "
-		<< "UPDATE player_inventory SET item_count = item_count - " << transReq->item_count()
-		<< " WHERE user_id = " << transReq->user_id() << " AND item_id = " << transReq->item_id() << "; "
-		<< "DELETE FROM player_inventory WHERE user_id = " << transReq->user_id()
-		<< " AND item_id = " << transReq->item_id() << " AND item_count <= 0; "
-		<< "UPDATE player_data SET gold = gold + " << sell_price
-		<< " WHERE user_id = " << transReq->user_id() << "; "
-		<< "COMMIT;";
+	// 트랜잭션을 개별 쿼리로 분리하여 실행
+	bool success = true;
 
-	if (_sql_connector->ExecuteQuery(transactionQuery.str())) {
-		// 현재 골드 조회
-		std::string goldQuery = "SELECT gold FROM player_data WHERE user_id = " + std::to_string(transReq->user_id());
-		if (_sql_connector->ExecuteQuery(goldQuery)) {
-			MYSQL_RES* goldResult = _sql_connector->GetResult();
-			if (goldResult) {
-				MYSQL_ROW goldRow = mysql_fetch_row(goldResult);
-				if (goldRow) {
-					uint32_t current_gold = std::stoul(goldRow[0]);
+	// 트랜잭션 시작
+	if (!_sql_connector->ExecuteQuery("START TRANSACTION")) {
+		SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
+		return;
+	}
+	// 아이템 수량 감소
+	// 수량 감소 (이미 위에서 owned_count >= transReq->item_count() 검증했으므로 안전)
+	std::stringstream updateQuery;
+	updateQuery << "UPDATE player_inventory SET item_count = item_count - " << transReq->item_count()
+		<< " WHERE user_id = " << transReq->user_id()
+		<< " AND item_id = " << transReq->item_id();
+
+	if (!_sql_connector->ExecuteQuery(updateQuery.str())) {
+		success = false;
+	}
+
+	// 0개가 된 아이템 삭제
+	if (success) {
+		std::stringstream deleteQuery;
+		deleteQuery << "DELETE FROM player_inventory WHERE user_id = " << transReq->user_id()
+			<< " AND item_id = " << transReq->item_id() << " AND item_count = 0";
+
+		if (!_sql_connector->ExecuteQuery(deleteQuery.str())) {
+			success = false;
+		}
+	}
+
+	// 골드 추가
+	if (success) {
+		std::stringstream goldUpdateQuery;
+		goldUpdateQuery << "UPDATE player_data SET gold = gold + " << sell_price
+			<< " WHERE user_id = " << transReq->user_id();
+
+		if (!_sql_connector->ExecuteQuery(goldUpdateQuery.str())) {
+			success = false;
+		}
+	}
+
+	if (success) {
+		// 트랜잭션 커밋
+		if (_sql_connector->ExecuteQuery("COMMIT")) {
+			// 현재 골드 조회
+			std::string goldQuery = "SELECT gold FROM player_data WHERE user_id = " + std::to_string(transReq->user_id());
+			if (_sql_connector->ExecuteQuery(goldQuery)) {
+				MYSQL_RES* goldResult = _sql_connector->GetResult();
+				if (goldResult) {
+					MYSQL_ROW goldRow = mysql_fetch_row(goldResult);
+					if (goldRow) {
+						uint32_t current_gold = std::stoul(goldRow[0]);
+						_sql_connector->FreeResult(goldResult);
+						auto responsePacket = _packet_manager->CreateShopTransactionResponse(
+							ResultCode_SUCCESS, "판매 완료", current_gold, task.client_socket);
+						SendResponse(task, responsePacket);
+						std::cout << "[DatabaseThread] 아이템 판매 완료: 사용자 ID " << transReq->user_id() << std::endl;
+						return;
+					}
 					_sql_connector->FreeResult(goldResult);
-
-					auto responsePacket = _packet_manager->CreateShopTransactionResponse(
-						ResultCode_SUCCESS, "판매 완료", current_gold, task.client_socket);
-					SendResponse(task, responsePacket);
-					std::cout << "[DatabaseThread] 아이템 판매 완료: 사용자 ID " << transReq->user_id() << std::endl;
-					return;
 				}
-				_sql_connector->FreeResult(goldResult);
 			}
 		}
 	}
+
+	// 실패 시 롤백
+	_sql_connector->ExecuteQuery("ROLLBACK");
 	SendErrorResponse(task, EventType_S2C_ShopTransaction, ResultCode_FAIL);
 }
 
