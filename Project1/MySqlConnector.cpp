@@ -41,7 +41,7 @@ bool MySqlConnector::Connect(std::string host, std::string userName, std::string
 {
     try
     {
-        conn_result = mysql_real_connect(conn, host.c_str(), userName.c_str(), pass.c_str(), dbName.c_str(), port, NULL, 0);
+        conn_result = mysql_real_connect(conn, host.c_str(), userName.c_str(), pass.c_str(), dbName.c_str(), port, NULL, CLIENT_MULTI_STATEMENTS);
         
         if (conn_result) {
             std::cout << "Success To Connect MySQL Database!" << std::endl;

@@ -717,17 +717,18 @@ void DatabaseThread::HandleItemModification(const Task& task, const C2S_ItemData
 	}
 	else if (itemReq->request_type() == 2) {
 		// 아이템 제거
-		query << "UPDATE player_inventory SET item_count = GREATEST(0, item_count - " << itemReq->item_count() << ") "
-			<< "WHERE user_id = " << itemReq->user_id()
-			<< " AND item_id = " << itemReq->item_id()
-			<< "; DELETE FROM player_inventory WHERE user_id = " << itemReq->user_id()
-			<< " AND item_id = " << itemReq->item_id() << " AND item_count <= 0";
+		query << "START TRANSACTION; "
+			<< "UPDATE player_inventory SET item_count = GREATEST(0, item_count - " << itemReq->item_count() << ") "
+			<< "WHERE user_id = " << itemReq->user_id() << " AND item_id = " << itemReq->item_id() << "; "
+			<< "DELETE FROM player_inventory WHERE user_id = " << itemReq->user_id()
+			<< " AND item_id = " << itemReq->item_id() << " AND item_count <= 0; "
+			<< "COMMIT;";
 	}
 
 	if (_sql_connector->ExecuteQuery(query.str())) {
 		auto responsePacket = _packet_manager->CreateItemDataResponse(ResultCode_SUCCESS, itemReq->user_id(), 0, task.client_socket);
 		SendResponse(task, responsePacket);
-		std::cout << "[DatabaseThread] 아이템 수정 완료: 사용자 ID " << itemReq->user_id() << std::endl;
+		std::cout << "[DatabaseThread] 아이템 수정 완료: 사용자 ID " << itemReq->user_id() << " Request Type : " << itemReq->request_type() << std::endl;
 	}
 	else {
 		SendErrorResponse(task, EventType_S2C_ItemData, ResultCode_FAIL);
