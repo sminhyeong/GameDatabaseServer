@@ -6,6 +6,8 @@
 
 사용한 언어 : C++
 
+사용한 DB 및 DB 툴: Maria DB, HeidiSQL
+
 사용한 툴 : Visual Studio 2022
 
 *프로그램 구조*
