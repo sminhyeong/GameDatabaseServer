@@ -19,3 +19,5 @@
 
 패킷은 Flatbuffer를 이용하였으며, UE5로 제작된 멀티 레이드 컨텐츠용 DB서버로 사용하고자 제작된 프로젝트
 UE5 클라이언트 코드 : https://github.com/sminhyeong/ProjectC.git
+
+<img width="1894" height="1015" alt="Image" src="https://github.com/user-attachments/assets/a126950f-8ac6-4d5b-90cd-6159ebac4c6b" />
